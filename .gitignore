@@ -1,8 +1,19 @@
+## .NET / Visual Studio
 bin/
 obj/
+*.user
+*.suo
 .vs/
-*.nupkg
+*.cache
+
+## Env / Secrets (never commit)
 .env
-.env.bak.*
-mise.toml.local
-INFISICAL_TOKEN
+.env.*
+!.env.*.example
+
+## EF Design-time cache
+*.mdf
+*.ldf
+
+## JetBrains
+.idea/
