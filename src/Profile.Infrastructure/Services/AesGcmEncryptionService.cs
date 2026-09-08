@@ -96,7 +96,7 @@ public class AesGcmEncryptionService : IAesEncryptionService
 
             return Encoding.UTF8.GetString(plainBytes);
         }
-        catch (Exception ex) when (ex is CryptographicException or FormatException)
+        catch (Exception ex) when (ex is CryptographicException or FormatException or AuthenticationTagMismatchException)
         {
             _logger.LogError(ex, "AES-GCM decryption failed — data may be corrupted or key mismatch.");
             throw;
