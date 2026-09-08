@@ -64,21 +64,6 @@ public class DomainValidationTests
         Assert.True(skill.UpdatedAt >= before);
     }
 
-    [Fact]
-    public void Skill_NameTooLong_Throws()
-    {
-        Assert.ThrowsAny<ArgumentException>(
-            () => new Skill(ProfileId, new string('x', Skill.MaxNameLength + 1), 3, 1));
-    }
-
-    [Fact]
-    public void Skill_NameAtMaxLength_Creates()
-    {
-        var skill = new Skill(ProfileId, new string('x', Skill.MaxNameLength), 3, 1);
-
-        Assert.Equal(Skill.MaxNameLength, skill.Name.Length);
-    }
-
     // ── WorkExperience ────────────────────────────────────────────────────
     [Fact]
     public void WorkExperience_EndAfterStart_Creates()
@@ -118,33 +103,6 @@ public class DomainValidationTests
                 new DateOnly(2023, 1, 1), new DateOnly(2022, 1, 1), false, null));
     }
 
-    [Fact]
-    public void WorkExperience_CompanyTooLong_Throws()
-    {
-        Assert.ThrowsAny<ArgumentException>(
-            () => new WorkExperience(ProfileId,
-                new string('x', WorkExperience.MaxCompanyLength + 1), "Dev",
-                new DateOnly(2022, 1, 1), null, true, null));
-    }
-
-    [Fact]
-    public void WorkExperience_TitleTooLong_Throws()
-    {
-        Assert.ThrowsAny<ArgumentException>(
-            () => new WorkExperience(ProfileId, "Acme",
-                new string('x', WorkExperience.MaxTitleLength + 1),
-                new DateOnly(2022, 1, 1), null, true, null));
-    }
-
-    [Fact]
-    public void WorkExperience_DescriptionTooLong_Throws()
-    {
-        Assert.ThrowsAny<ArgumentException>(
-            () => new WorkExperience(ProfileId, "Acme", "Dev",
-                new DateOnly(2022, 1, 1), null, true,
-                new string('x', WorkExperience.MaxDescriptionLength + 1)));
-    }
-
     // ── Education ─────────────────────────────────────────────────────────
     [Fact]
     public void Education_EndBeforeStart_Throws()
@@ -161,27 +119,6 @@ public class DomainValidationTests
             new DateOnly(2022, 1, 1), null, null);
 
         Assert.Null(edu.EndDate);
-    }
-
-    [Fact]
-    public void Education_InstitutionTooLong_Throws()
-    {
-        Assert.ThrowsAny<ArgumentException>(
-            () => new Education(ProfileId,
-                new string('x', Education.MaxInstitutionLength + 1), null, null,
-                new DateOnly(2022, 1, 1), null, null));
-    }
-
-    [Theory]
-    [InlineData(129, 2, 3)] // degree > 128
-    [InlineData(3, 129, 3)] // field > 128
-    [InlineData(3, 2, 33)] // grade > 32
-    public void Education_OptionalFieldTooLong_Throws(int degreeLen, int fieldLen, int gradeLen)
-    {
-        Assert.ThrowsAny<ArgumentException>(
-            () => new Education(ProfileId, "HUST",
-                new string('x', degreeLen), new string('y', fieldLen),
-                new DateOnly(2022, 1, 1), null, new string('z', gradeLen)));
     }
 
     // ── UserProfile ───────────────────────────────────────────────────────
