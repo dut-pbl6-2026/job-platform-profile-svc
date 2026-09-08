@@ -169,6 +169,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "profile" 
 app.MapProfileEndpoints();
 app.MapSkillEndpoints();
 app.MapExperienceEndpoints();
+app.MapEducationEndpoints();
 
 app.Run();
 
