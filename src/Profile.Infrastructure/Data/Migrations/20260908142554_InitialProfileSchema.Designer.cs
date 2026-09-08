@@ -12,7 +12,7 @@ using Profile.Infrastructure.Data;
 namespace Profile.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ProfileDbContext))]
-    [Migration("20260908051424_InitialProfileSchema")]
+    [Migration("20260908142554_InitialProfileSchema")]
     partial class InitialProfileSchema
     {
         /// <inheritdoc />
@@ -85,7 +85,8 @@ namespace Profile.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<int>("Proficiency")
-                        .HasColumnType("integer");
+                        .HasColumnType("integer")
+                        .HasColumnName("proficiency");
 
                     b.Property<Guid>("ProfileId")
                         .HasColumnType("uuid");
@@ -94,7 +95,8 @@ namespace Profile.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("YearsOfExperience")
-                        .HasColumnType("integer");
+                        .HasColumnType("integer")
+                        .HasColumnName("years_of_experience");
 
                     b.HasKey("Id");
 
@@ -103,6 +105,8 @@ namespace Profile.Infrastructure.Data.Migrations
                     b.ToTable("skills", null, t =>
                         {
                             t.HasCheckConstraint("CK_skills_proficiency", "proficiency >= 1 AND proficiency <= 5");
+
+                            t.HasCheckConstraint("CK_skills_years", "years_of_experience >= 0");
                         });
                 });
 
