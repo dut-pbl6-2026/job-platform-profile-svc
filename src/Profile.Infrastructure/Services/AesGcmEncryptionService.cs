@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Profile.Core.Interfaces;
 
@@ -21,7 +22,10 @@ public class AesGcmEncryptionService : IAesEncryptionService
     private readonly byte[] _key;
     private readonly ILogger<AesGcmEncryptionService> _logger;
 
-    public AesGcmEncryptionService(IConfiguration configuration, ILogger<AesGcmEncryptionService> logger)
+    public AesGcmEncryptionService(
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        ILogger<AesGcmEncryptionService> logger)
     {
         _logger = logger;
         var keyStr = configuration["PROFILE_ENCRYPTION_KEY"]
@@ -29,8 +33,15 @@ public class AesGcmEncryptionService : IAesEncryptionService
 
         if (string.IsNullOrWhiteSpace(keyStr))
         {
-            // SEC-08: Fallback dev key — ONLY for Development, never Production.
-            // Program.cs fails fast in non-Development if key is missing.
+            if (!environment.IsDevelopment())
+            {
+                // SEC-08 fail-fast: never boot non-Development on a public dev key.
+                throw new InvalidOperationException(
+                    "PROFILE_ENCRYPTION_KEY (or ENCRYPTION_KEY) is not configured. " +
+                    "Set it before deploying outside Development.");
+            }
+
+            // SEC-08: Fallback dev key — Development ONLY, never Production.
             keyStr = "dev-profile-enc-key-change-me!!";
             _logger.LogWarning(
                 "PROFILE_ENCRYPTION_KEY not set — using insecure dev key. " +
@@ -85,7 +96,7 @@ public class AesGcmEncryptionService : IAesEncryptionService
 
             return Encoding.UTF8.GetString(plainBytes);
         }
-        catch (CryptographicException ex)
+        catch (Exception ex) when (ex is CryptographicException or FormatException)
         {
             _logger.LogError(ex, "AES-GCM decryption failed — data may be corrupted or key mismatch.");
             throw;
