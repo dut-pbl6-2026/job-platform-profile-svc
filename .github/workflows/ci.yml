@@ -1,8 +1,20 @@
 name: ci
 on: { push: { branches: [main] }, pull_request: { branches: [main] } }
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
+    env:
+      # Dummy localhost string for EF design-time factory only.
+      # `has-pending-model-changes` never opens a connection — never a real credential.
+      DATABASE_URL_PROFILE: Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres
     steps:
       - uses: actions/checkout@v4
-      - run: echo "ci placeholder"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build ProfileService.sln --warnaserror
+      - run: dotnet format --verify-no-changes ProfileService.sln
+      - run: dotnet test ProfileService.sln
+      - run: dotnet tool install --global dotnet-ef
+      - run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+      - run: dotnet ef migrations has-pending-model-changes --project src/Profile.Infrastructure --startup-project src/Profile.Api

@@ -1,8 +1,27 @@
+## .NET / Visual Studio
 bin/
 obj/
+*.user
+*.suo
 .vs/
-*.nupkg
+*.cache
+
+## Env / Secrets (never commit)
 .env
+.env.*
+!.env.*.example
 .env.bak.*
 mise.toml.local
 INFISICAL_TOKEN
+
+## NuGet packages — never commit stray *.nupkg, except the intentional
+## local dev feed (long-term: move to GH Packages, remove local-feed/)
+*.nupkg
+!local-feed/*.nupkg
+
+## EF Design-time cache
+*.mdf
+*.ldf
+
+## JetBrains
+.idea/
