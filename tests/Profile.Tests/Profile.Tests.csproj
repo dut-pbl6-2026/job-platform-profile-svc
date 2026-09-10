@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Profile.Api/Profile.Api.csproj" />
     <ProjectReference Include="../../src/Profile.Core/Profile.Core.csproj" />
     <ProjectReference Include="../../src/Profile.Infrastructure/Profile.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />

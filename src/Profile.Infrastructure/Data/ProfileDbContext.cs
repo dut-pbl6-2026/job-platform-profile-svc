@@ -63,11 +63,13 @@ public class ProfileDbContext : DbContext
             e.ToTable("skills");
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).HasMaxLength(100).IsRequired();
-            e.Property(x => x.Proficiency).IsRequired();
-            e.Property(x => x.YearsOfExperience).IsRequired();
+            e.Property(x => x.Proficiency).HasColumnName("proficiency").IsRequired();
+            e.Property(x => x.YearsOfExperience).HasColumnName("years_of_experience").IsRequired();
 
-            // DB-level check constraint (domain already validates, defense in depth)
+            // DB-level check constraints (domain already validates, defense in depth).
+            // NOTE: SQL references snake_case columns — keep HasColumnName in sync.
             e.ToTable(t => t.HasCheckConstraint("CK_skills_proficiency", "proficiency >= 1 AND proficiency <= 5"));
+            e.ToTable(t => t.HasCheckConstraint("CK_skills_years", "years_of_experience >= 0"));
 
             e.HasIndex(x => x.ProfileId);
         });

@@ -63,8 +63,12 @@ if (builder.Environment.IsProduction() || builder.Environment.IsStaging())
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             };
         });
-    builder.Services.AddAuthorization();
 }
+
+// Authorization services cho mọi môi trường — endpoint dùng .RequireAuthorization()
+// (Skills/Experiences/Educations). Dev pipeline không có UseAuthorization nên
+// DevAuthMiddleware + check X-User-Id thủ công vẫn quyết định 401 như trước.
+builder.Services.AddAuthorization();
 
 // ── Problem Details RFC 7807 (REL-07) ─────────────────────────────────────
 builder.Services.AddProblemDetails();
@@ -156,8 +160,9 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseAuthentication();
-    app.UseAuthorization();
 }
+
+app.UseAuthorization();
 
 // ── Health check (REL-06) ─────────────────────────────────────────────────
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "profile" }))
@@ -167,6 +172,9 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "profile" 
 
 // ── API Endpoints ─────────────────────────────────────────────────────────
 app.MapProfileEndpoints();
+app.MapSkillEndpoints();
+app.MapExperienceEndpoints();
+app.MapEducationEndpoints();
 
 app.Run();
 

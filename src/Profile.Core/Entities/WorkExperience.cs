@@ -8,6 +8,11 @@ namespace Profile.Core.Entities;
 /// </summary>
 public class WorkExperience : Entity
 {
+    /// <summary>Độ dài tối đa — đồng bộ với DTO [MaxLength] và DB varchar (company 256, title 128, description 2000).</summary>
+    public const int MaxCompanyLength = 256;
+    public const int MaxTitleLength = 128;
+    public const int MaxDescriptionLength = 2000;
+
     /// <summary>FK đến UserProfile.</summary>
     public Guid ProfileId { get; private set; }
 
@@ -47,6 +52,7 @@ public class WorkExperience : Entity
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(company, nameof(company));
         ArgumentException.ThrowIfNullOrWhiteSpace(title, nameof(title));
+        ValidateLengths(company, title, description);
         ValidateDates(startDate, endDate, isCurrent);
 
         ProfileId = profileId;
@@ -69,6 +75,7 @@ public class WorkExperience : Entity
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(company, nameof(company));
         ArgumentException.ThrowIfNullOrWhiteSpace(title, nameof(title));
+        ValidateLengths(company, title, description);
         ValidateDates(startDate, endDate, isCurrent);
 
         Company = company.Trim();
@@ -84,5 +91,15 @@ public class WorkExperience : Entity
     {
         if (!isCurrent && endDate.HasValue && endDate.Value < startDate)
             throw new ArgumentException("EndDate must be >= StartDate when not current.", nameof(endDate));
+    }
+
+    private static void ValidateLengths(string company, string title, string? description)
+    {
+        if (company.Trim().Length > MaxCompanyLength)
+            throw new ArgumentException($"Company must not exceed {MaxCompanyLength} characters.", nameof(company));
+        if (title.Trim().Length > MaxTitleLength)
+            throw new ArgumentException($"Title must not exceed {MaxTitleLength} characters.", nameof(title));
+        if (description is not null && description.Trim().Length > MaxDescriptionLength)
+            throw new ArgumentException($"Description must not exceed {MaxDescriptionLength} characters.", nameof(description));
     }
 }

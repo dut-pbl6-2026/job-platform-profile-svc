@@ -65,8 +65,8 @@ namespace Profile.Infrastructure.Data.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     ProfileId = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Proficiency = table.Column<int>(type: "integer", nullable: false),
-                    YearsOfExperience = table.Column<int>(type: "integer", nullable: false),
+                    proficiency = table.Column<int>(type: "integer", nullable: false),
+                    years_of_experience = table.Column<int>(type: "integer", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
@@ -74,6 +74,7 @@ namespace Profile.Infrastructure.Data.Migrations
                 {
                     table.PrimaryKey("PK_skills", x => x.Id);
                     table.CheckConstraint("CK_skills_proficiency", "proficiency >= 1 AND proficiency <= 5");
+                    table.CheckConstraint("CK_skills_years", "years_of_experience >= 0");
                     table.ForeignKey(
                         name: "FK_skills_profiles_ProfileId",
                         column: x => x.ProfileId,
