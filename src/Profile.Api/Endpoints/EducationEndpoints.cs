@@ -13,7 +13,8 @@ public static class EducationEndpoints
     public static IEndpointRouteBuilder MapEducationEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/profiles")
-                       .WithTags("Educations");
+                       .WithTags("Educations")
+                       .RequireAuthorization();
 
         group.MapPost("/educations", AddEducation)
              .WithName("AddEducation")
@@ -52,21 +53,27 @@ public static class EducationEndpoints
         if (userId == Guid.Empty)
             return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
 
-        var err = ValidateDto(dto.Institution, dto.StartDate, dto.EndDate);
+        var err = ValidateDto(dto.Institution, dto.Degree, dto.Field, dto.Grade, dto.StartDate, dto.EndDate);
         if (err is not null) return err;
 
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
-        if (profile is null)
-        {
-            profile = new UserProfile(userId, "Unknown");
-            db.Profiles.Add(profile);
-            await db.SaveChangesAsync();
-        }
+        var profile = await ProfileEndpoints.GetOrCreateProfileAsync(db, userId, logger);
 
         var edu = new Education(profile.Id, dto.Institution, dto.Degree, dto.Field,
             dto.StartDate, dto.EndDate, dto.Grade);
         db.Educations.Add(edu);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Defense in depth: length violations → 400, không để 500.
+            logger.LogWarning(ex, "Rejected education insert for profile {ProfileId}", profile.Id);
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { string.Empty, ["Invalid education data. Check field lengths and dates."] },
+            });
+        }
 
         return Results.Created($"/api/profiles/educations/{edu.Id}",
             new { id = edu.Id, message = "Education entry added successfully" });
@@ -83,7 +90,7 @@ public static class EducationEndpoints
         if (userId == Guid.Empty)
             return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
 
-        var err = ValidateDto(dto.Institution, dto.StartDate, dto.EndDate);
+        var err = ValidateDto(dto.Institution, dto.Degree, dto.Field, dto.Grade, dto.StartDate, dto.EndDate);
         if (err is not null) return err;
 
         var edu = await db.Educations
@@ -97,7 +104,18 @@ public static class EducationEndpoints
             return Results.Problem("You are not allowed to update this education entry.", statusCode: StatusCodes.Status403Forbidden);
 
         edu.Update(dto.Institution, dto.Degree, dto.Field, dto.StartDate, dto.EndDate, dto.Grade);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            logger.LogWarning(ex, "Rejected education update {EducationId}", id);
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { string.Empty, ["Invalid education data. Check field lengths and dates."] },
+            });
+        }
 
         return Results.Ok(new { id = edu.Id, message = "Education entry updated successfully" });
     }
@@ -128,12 +146,36 @@ public static class EducationEndpoints
         return Results.NoContent();
     }
 
-    private static IResult? ValidateDto(string institution, DateOnly startDate, DateOnly? endDate)
+    private static IResult? ValidateDto(string institution, string? degree, string? field, string? grade, DateOnly startDate, DateOnly? endDate)
     {
         if (string.IsNullOrWhiteSpace(institution))
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
                 { nameof(institution), ["Institution is required."] },
+            });
+
+        if (institution.Trim().Length > Education.MaxInstitutionLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(institution), [$"Institution must not exceed {Education.MaxInstitutionLength} characters."] },
+            });
+
+        if (degree is not null && degree.Trim().Length > Education.MaxDegreeLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(degree), [$"Degree must not exceed {Education.MaxDegreeLength} characters."] },
+            });
+
+        if (field is not null && field.Trim().Length > Education.MaxFieldLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(field), [$"Field must not exceed {Education.MaxFieldLength} characters."] },
+            });
+
+        if (grade is not null && grade.Trim().Length > Education.MaxGradeLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(grade), [$"Grade must not exceed {Education.MaxGradeLength} characters."] },
             });
 
         if (endDate.HasValue && endDate.Value < startDate)

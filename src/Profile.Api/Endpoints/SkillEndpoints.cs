@@ -13,7 +13,8 @@ public static class SkillEndpoints
     public static IEndpointRouteBuilder MapSkillEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/profiles")
-                       .WithTags("Skills");
+                       .WithTags("Skills")
+                       .RequireAuthorization();
 
         // PROFILE-01-02: Add skill to current user's profile
         group.MapPost("/skills", AddSkill)
@@ -52,6 +53,12 @@ public static class SkillEndpoints
                 { nameof(dto.Name), ["Name is required."] },
             });
 
+        if (dto.Name.Trim().Length > Skill.MaxNameLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(dto.Name), [$"Name must not exceed {Skill.MaxNameLength} characters."] },
+            });
+
         if (dto.Proficiency is < 1 or > 5)
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -64,19 +71,24 @@ public static class SkillEndpoints
                 { nameof(dto.YearsOfExperience), ["YearsOfExperience must be >= 0."] },
             });
 
-        // Find or auto-create profile (PROFILE-01-01 prerequisite)
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
-        if (profile is null)
-        {
-            profile = new UserProfile(userId, "Unknown");
-            db.Profiles.Add(profile);
-            await db.SaveChangesAsync();
-            logger.LogInformation("Auto-created profile {ProfileId} for user {UserId}", profile.Id, userId);
-        }
+        // Find or auto-create profile (PROFILE-01-01 prerequisite) — race-safe.
+        var profile = await ProfileEndpoints.GetOrCreateProfileAsync(db, userId, logger);
 
         var skill = new Skill(profile.Id, dto.Name, dto.Proficiency, dto.YearsOfExperience);
         db.Skills.Add(skill);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Defense in depth: length/check-constraint violations → 400, không để 500.
+            logger.LogWarning(ex, "Rejected skill insert for profile {ProfileId}", profile.Id);
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { string.Empty, ["Invalid skill data. Check field lengths and proficiency range."] },
+            });
+        }
 
         logger.LogInformation("Added skill {SkillId} to profile {ProfileId}", skill.Id, profile.Id);
 

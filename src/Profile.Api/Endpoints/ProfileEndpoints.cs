@@ -208,6 +208,46 @@ public static class ProfileEndpoints
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+    /// <summary>
+    /// FullName mặc định khi auto-create profile từ POST skills/experiences/educations.
+    /// User nên PUT /me để đặt tên thật — giá trị này chỉ là placeholder, không phải dữ liệu thật.
+    /// </summary>
+    internal const string AutoCreatedFullName = "Unknown";
+
+    /// <summary>
+    /// Tìm profile theo userId, auto-create nếu chưa có (prerequisite cho POST skills/experiences/educations).
+    /// Chịu race: concurrent POSTs có thể cùng insert → bắt DbUpdateException vi phạm
+    /// IX_profiles_user_id unique rồi đọc lại thay vì trả 500.
+    /// </summary>
+    internal static async Task<UserProfile> GetOrCreateProfileAsync(
+        ProfileDbContext db,
+        Guid userId,
+        ILogger logger)
+    {
+        var existing = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
+        if (existing is not null)
+            return existing;
+
+        var profile = new UserProfile(userId, AutoCreatedFullName);
+        db.Profiles.Add(profile);
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Race: request khác đã insert profile cho user này trước → đọc lại.
+            db.ChangeTracker.Clear();
+            var raced = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
+            if (raced is not null)
+                return raced;
+            throw;
+        }
+
+        logger.LogInformation("Auto-created profile {ProfileId} for user {UserId}", profile.Id, userId);
+        return profile;
+    }
+
     internal static Guid GetUserId(HttpContext context)
     {
         // Try Claims first (set by DevAuthMiddleware or JWT Bearer)

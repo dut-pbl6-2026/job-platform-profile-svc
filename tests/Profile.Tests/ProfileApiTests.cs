@@ -152,6 +152,27 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
     }
 
+    [Fact]
+    public async Task AddSkill_NameTooLong_Returns400_Not500()
+    {
+        var res = await SendAsync(HttpMethod.Post, "/api/profiles/skills", NewUser(), new
+        {
+            name = new string('x', 101),
+            proficiency = 3,
+            yearsOfExperience = 1,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteSkill_UnknownId_Returns404()
+    {
+        var res = await SendAsync(HttpMethod.Delete, $"/api/profiles/skills/{Guid.NewGuid()}", NewUser());
+
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
     // ── PROFILE-01-03: experiences ────────────────────────────────────────
     [Fact]
     public async Task AddExperience_EndBeforeStart_Returns400()
@@ -163,6 +184,21 @@ public class ProfileApiTests(ProfileApiFixture fixture)
             startDate = "2023-01-01",
             endDate = "2022-01-01",
             isCurrent = false,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task AddExperience_CompanyTooLong_Returns400_Not500()
+    {
+        var res = await SendAsync(HttpMethod.Post, "/api/profiles/experiences", NewUser(), new
+        {
+            company = new string('x', 257),
+            title = "Dev",
+            startDate = "2022-01-01",
+            endDate = (string?)null,
+            isCurrent = true,
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
@@ -224,6 +260,37 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         });
 
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+    }
+
+    [Fact]
+    public async Task AddEducation_InstitutionTooLong_Returns400_Not500()
+    {
+        var res = await SendAsync(HttpMethod.Post, "/api/profiles/educations", NewUser(), new
+        {
+            institution = new string('x', 257),
+            startDate = "2018-09-01",
+            endDate = "2022-06-01",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteEducation_OtherUser_Returns403()
+    {
+        var owner = NewUser();
+        var create = await SendAsync(HttpMethod.Post, "/api/profiles/educations", owner, new
+        {
+            institution = "HUST",
+            startDate = "2018-09-01",
+            endDate = "2022-06-01",
+        });
+        using var doc = await AsJsonAsync(create);
+        var eduId = doc.RootElement.GetProperty("id").GetGuid();
+
+        var forbidden = await SendAsync(HttpMethod.Delete, $"/api/profiles/educations/{eduId}", NewUser());
+
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
     }
 }
 

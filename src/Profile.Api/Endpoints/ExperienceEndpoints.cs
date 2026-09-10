@@ -13,7 +13,8 @@ public static class ExperienceEndpoints
     public static IEndpointRouteBuilder MapExperienceEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/profiles")
-                       .WithTags("Experiences");
+                       .WithTags("Experiences")
+                       .RequireAuthorization();
 
         group.MapPost("/experiences", AddExperience)
              .WithName("AddExperience")
@@ -53,23 +54,29 @@ public static class ExperienceEndpoints
         if (userId == Guid.Empty)
             return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
 
-        var validationError = ValidateDto(dto.Company, dto.Title, dto.StartDate, dto.EndDate, dto.IsCurrent);
+        var validationError = ValidateDto(dto.Company, dto.Title, dto.Description, dto.StartDate, dto.EndDate, dto.IsCurrent);
         if (validationError is not null)
             return validationError;
 
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
-        if (profile is null)
-        {
-            profile = new UserProfile(userId, "Unknown");
-            db.Profiles.Add(profile);
-            await db.SaveChangesAsync();
-        }
+        var profile = await ProfileEndpoints.GetOrCreateProfileAsync(db, userId, logger);
 
         var exp = new WorkExperience(
             profile.Id, dto.Company, dto.Title,
             dto.StartDate, dto.EndDate, dto.IsCurrent, dto.Description);
         db.WorkExperiences.Add(exp);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Defense in depth: length violations → 400, không để 500.
+            logger.LogWarning(ex, "Rejected experience insert for profile {ProfileId}", profile.Id);
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { string.Empty, ["Invalid work experience data. Check field lengths and dates."] },
+            });
+        }
 
         logger.LogInformation("Added experience {ExperienceId} to profile {ProfileId}", exp.Id, profile.Id);
 
@@ -90,7 +97,7 @@ public static class ExperienceEndpoints
         if (userId == Guid.Empty)
             return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
 
-        var validationError = ValidateDto(dto.Company, dto.Title, dto.StartDate, dto.EndDate, dto.IsCurrent);
+        var validationError = ValidateDto(dto.Company, dto.Title, dto.Description, dto.StartDate, dto.EndDate, dto.IsCurrent);
         if (validationError is not null)
             return validationError;
 
@@ -105,7 +112,18 @@ public static class ExperienceEndpoints
             return Results.Problem("You are not allowed to update this work experience.", statusCode: StatusCodes.Status403Forbidden);
 
         exp.Update(dto.Company, dto.Title, dto.StartDate, dto.EndDate, dto.IsCurrent, dto.Description);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            logger.LogWarning(ex, "Rejected experience update {ExperienceId}", id);
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { string.Empty, ["Invalid work experience data. Check field lengths and dates."] },
+            });
+        }
 
         logger.LogInformation("Updated experience {ExperienceId} by user {UserId}", id, userId);
 
@@ -141,8 +159,8 @@ public static class ExperienceEndpoints
         return Results.NoContent();
     }
 
-    // ── Shared validation: StartDate <= EndDate when not current ─────────────
-    private static IResult? ValidateDto(string company, string title, DateOnly startDate, DateOnly? endDate, bool isCurrent)
+    // ── Shared validation: required + MaxLength + StartDate <= EndDate when not current ──
+    private static IResult? ValidateDto(string company, string title, string? description, DateOnly startDate, DateOnly? endDate, bool isCurrent)
     {
         if (string.IsNullOrWhiteSpace(company))
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -150,10 +168,28 @@ public static class ExperienceEndpoints
                 { nameof(company), ["Company is required."] },
             });
 
+        if (company.Trim().Length > WorkExperience.MaxCompanyLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(company), [$"Company must not exceed {WorkExperience.MaxCompanyLength} characters."] },
+            });
+
         if (string.IsNullOrWhiteSpace(title))
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
                 { nameof(title), ["Title is required."] },
+            });
+
+        if (title.Trim().Length > WorkExperience.MaxTitleLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(title), [$"Title must not exceed {WorkExperience.MaxTitleLength} characters."] },
+            });
+
+        if (description is not null && description.Trim().Length > WorkExperience.MaxDescriptionLength)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(description), [$"Description must not exceed {WorkExperience.MaxDescriptionLength} characters."] },
             });
 
         if (!isCurrent && endDate.HasValue && endDate.Value < startDate)

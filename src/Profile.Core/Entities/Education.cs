@@ -8,6 +8,12 @@ namespace Profile.Core.Entities;
 /// </summary>
 public class Education : Entity
 {
+    /// <summary>Độ dài tối đa — đồng bộ với DTO [MaxLength] và DB varchar (institution 256, degree/field 128, grade 32).</summary>
+    public const int MaxInstitutionLength = 256;
+    public const int MaxDegreeLength = 128;
+    public const int MaxFieldLength = 128;
+    public const int MaxGradeLength = 32;
+
     /// <summary>FK đến UserProfile.</summary>
     public Guid ProfileId { get; private set; }
 
@@ -46,6 +52,7 @@ public class Education : Entity
         string? grade)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(institution, nameof(institution));
+        ValidateLengths(institution, degree, field, grade);
         if (endDate.HasValue && endDate.Value < startDate)
             throw new ArgumentException("EndDate must be >= StartDate.", nameof(endDate));
 
@@ -68,6 +75,7 @@ public class Education : Entity
         string? grade)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(institution, nameof(institution));
+        ValidateLengths(institution, degree, field, grade);
         if (endDate.HasValue && endDate.Value < startDate)
             throw new ArgumentException("EndDate must be >= StartDate.", nameof(endDate));
 
@@ -78,5 +86,17 @@ public class Education : Entity
         EndDate = endDate;
         Grade = grade?.Trim();
         Touch();
+    }
+
+    private static void ValidateLengths(string institution, string? degree, string? field, string? grade)
+    {
+        if (institution.Trim().Length > MaxInstitutionLength)
+            throw new ArgumentException($"Institution must not exceed {MaxInstitutionLength} characters.", nameof(institution));
+        if (degree is not null && degree.Trim().Length > MaxDegreeLength)
+            throw new ArgumentException($"Degree must not exceed {MaxDegreeLength} characters.", nameof(degree));
+        if (field is not null && field.Trim().Length > MaxFieldLength)
+            throw new ArgumentException($"Field must not exceed {MaxFieldLength} characters.", nameof(field));
+        if (grade is not null && grade.Trim().Length > MaxGradeLength)
+            throw new ArgumentException($"Grade must not exceed {MaxGradeLength} characters.", nameof(grade));
     }
 }

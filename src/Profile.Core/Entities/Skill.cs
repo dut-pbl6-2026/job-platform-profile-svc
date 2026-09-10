@@ -8,6 +8,9 @@ namespace Profile.Core.Entities;
 /// </summary>
 public class Skill : Entity
 {
+    /// <summary>Độ dài tối đa của tên kỹ năng — đồng bộ với DTO [MaxLength(100)] và DB varchar(100).</summary>
+    public const int MaxNameLength = 100;
+
     /// <summary>FK đến UserProfile.</summary>
     public Guid ProfileId { get; private set; }
 
@@ -31,6 +34,7 @@ public class Skill : Entity
     public Skill(Guid profileId, string name, int proficiency, int yearsOfExperience)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name, nameof(name));
+        ValidateName(name);
         ValidateProficiency(proficiency);
         if (yearsOfExperience < 0)
             throw new ArgumentOutOfRangeException(nameof(yearsOfExperience), "Years of experience must be >= 0.");
@@ -45,6 +49,7 @@ public class Skill : Entity
     public void Update(string name, int proficiency, int yearsOfExperience)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name, nameof(name));
+        ValidateName(name);
         ValidateProficiency(proficiency);
         if (yearsOfExperience < 0)
             throw new ArgumentOutOfRangeException(nameof(yearsOfExperience), "Years of experience must be >= 0.");
@@ -59,5 +64,11 @@ public class Skill : Entity
     {
         if (proficiency is < 1 or > 5)
             throw new ArgumentOutOfRangeException(nameof(proficiency), "Proficiency must be between 1 and 5.");
+    }
+
+    private static void ValidateName(string name)
+    {
+        if (name.Trim().Length > MaxNameLength)
+            throw new ArgumentException($"Name must not exceed {MaxNameLength} characters.", nameof(name));
     }
 }
