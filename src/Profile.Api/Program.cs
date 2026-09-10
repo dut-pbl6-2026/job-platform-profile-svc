@@ -160,8 +160,9 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseAuthentication();
-    app.UseAuthorization();
 }
+
+app.UseAuthorization();
 
 // ── Health check (REL-06) ─────────────────────────────────────────────────
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "profile" }))
