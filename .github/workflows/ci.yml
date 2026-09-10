@@ -3,10 +3,25 @@ on: { push: { branches: [main] }, pull_request: { branches: [main] } }
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     env:
-      # Dummy localhost string for EF design-time factory only.
-      # `has-pending-model-changes` never opens a connection — never a real credential.
+      # Test database for API integration tests (ProfileApiTests creates it
+      # via the maintenance db; the app itself runs EF MigrateAsync on boot).
+      # ef-check never opens a connection — any well-formed string works there.
+      TEST_POSTGRES: Host=localhost;Port=5432;Username=postgres;Password=postgres
       DATABASE_URL_PROFILE: Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres
+      PROFILE_ENCRYPTION_KEY: ci-profile-encryption-key-32-chars!!
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
