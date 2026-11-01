@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Profile.Api.Endpoints;
 using Profile.Api.Middleware;
+using Profile.Api.Observability;
 using Profile.Core.Interfaces;
 using Profile.Infrastructure.Data;
 using Profile.Infrastructure.Services;
@@ -13,12 +14,8 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Logging — Structured JSON console (NFR MAINT) ─────────────────────────
-builder.Logging.ClearProviders();
-builder.Logging.AddJsonConsole(opts =>
-{
-    opts.JsonWriterOptions = new JsonWriterOptions { Indented = false };
-});
+// ── Logging — Serilog, compact JSON in non-Development (NFR MAINT, PBL6-49) ──
+builder.AddServiceLogging("profile");
 
 // ── Database — Npgsql / EF Core 10 (REL-01, MAINT) ────────────────────────
 var connStr = builder.Configuration.GetConnectionString("ProfileDb")
@@ -28,6 +25,7 @@ var connStr = builder.Configuration.GetConnectionString("ProfileDb")
 
 builder.Services.AddDbContext<ProfileDbContext>(opts =>
     opts.UseNpgsql(connStr));
+builder.Services.AddServiceHealthChecks<ProfileDbContext>(builder.Configuration);
 
 // ── AES-256-GCM Encryption Service (SEC-08) ───────────────────────────────
 // Fail-fast in non-Development if encryption key is missing
@@ -143,6 +141,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ── Middleware pipeline ────────────────────────────────────────────────────
+app.UseServiceLogging();
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
@@ -165,10 +164,8 @@ else
 app.UseAuthorization();
 
 // ── Health check (REL-06) ─────────────────────────────────────────────────
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "profile" }))
-   .WithTags("Health")
-   .WithName("HealthCheck")
-   .ExcludeFromDescription();
+// /health = static liveness, /health/ready = dependency checks (PBL6-49)
+app.MapServiceHealth("profile");
 
 // ── API Endpoints ─────────────────────────────────────────────────────────
 app.MapProfileEndpoints();
