@@ -6,7 +6,7 @@ COPY local-feed/ ./local-feed/
 COPY nuget.config ./
 COPY ProfileService.sln ./
 COPY src/ ./src/
-RUN dotnet restore ProfileService.sln
+RUN dotnet restore src/Profile.Api/Profile.Api.csproj
 RUN dotnet publish src/Profile.Api/Profile.Api.csproj -c Release -o /out --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
