@@ -10,6 +10,7 @@ using Profile.Infrastructure.Services;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenTelemetry.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +20,16 @@ builder.Logging.AddJsonConsole(opts =>
 {
     opts.JsonWriterOptions = new JsonWriterOptions { Indented = false };
 });
+
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddPrometheusExporter();
+    });
 
 // ── Database — Npgsql / EF Core 10 (REL-01, MAINT) ────────────────────────
 var connStr = builder.Configuration.GetConnectionString("ProfileDb")
@@ -164,6 +175,7 @@ else
 
 app.UseAuthorization();
 
+app.MapPrometheusScrapingEndpoint();
 // ── Health check (REL-06) ─────────────────────────────────────────────────
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "profile" }))
    .WithTags("Health")
