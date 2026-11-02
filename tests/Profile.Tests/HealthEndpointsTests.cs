@@ -39,7 +39,7 @@ public class HealthEndpointsTests
             builder.Services.AddDbContext<ProfileDbContext>(o => o.UseNpgsql(UnreachableDb));
         }
 
-        builder.Services.AddServiceHealthChecks<ProfileDbContext>(builder.Configuration, kafka: true, smtp: true);
+        builder.Services.AddServiceHealthChecks<ProfileDbContext>();
 
         var app = builder.Build();
         app.UseServiceLogging();
@@ -100,31 +100,6 @@ public class HealthEndpointsTests
         Assert.Contains("unhealthy", text);
         Assert.DoesNotContain("127.0.0.1", text);
         Assert.DoesNotContain("Password", text);
-    }
-
-    [Fact]
-    public async Task Ready_WithUnreachableKafka_IsDegradedButStill200()
-    {
-        await using var app = await StartAsync(config: new() { ["KAFKA_BOOTSTRAP_SERVERS"] = "SASL_SSL://127.0.0.1:1" });
-
-        var (res, body) = await GetJsonAsync(app, "/health/ready");
-
-        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        Assert.Equal("degraded", body.GetProperty("status").GetString());
-        var kafka = body.GetProperty("checks").EnumerateArray().Single(c => c.GetProperty("name").GetString() == "kafka");
-        Assert.Equal("degraded", kafka.GetProperty("status").GetString());
-    }
-
-    [Fact]
-    public async Task Ready_WithUnreachableSmtp_IsDegradedButStill200()
-    {
-        await using var app = await StartAsync(config: new() { ["SMTP_HOST"] = "127.0.0.1", ["SMTP_PORT"] = "1" });
-
-        var (res, body) = await GetJsonAsync(app, "/health/ready");
-
-        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        Assert.Equal("degraded", body.GetProperty("status").GetString());
-        Assert.Contains(body.GetProperty("checks").EnumerateArray(), c => c.GetProperty("name").GetString() == "smtp");
     }
 
     [Fact]

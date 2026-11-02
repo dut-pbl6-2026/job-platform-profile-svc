@@ -37,7 +37,7 @@ var connStr = builder.Configuration.GetConnectionString("ProfileDb")
 
 builder.Services.AddDbContext<ProfileDbContext>(opts =>
     opts.UseNpgsql(connStr));
-builder.Services.AddServiceHealthChecks<ProfileDbContext>(builder.Configuration);
+builder.Services.AddServiceHealthChecks<ProfileDbContext>();
 
 // ── AES-256-GCM Encryption Service (SEC-08) ───────────────────────────────
 // Fail-fast in non-Development if encryption key is missing
