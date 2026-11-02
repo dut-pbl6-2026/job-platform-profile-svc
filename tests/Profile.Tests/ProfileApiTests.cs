@@ -292,6 +292,21 @@ public class ProfileApiTests(ProfileApiFixture fixture)
 
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
     }
+
+    // ── Observability: /metrics is the Prometheus scrape target ────────────
+    [Fact]
+    public async Task GetMetrics_ReturnsPrometheusTextWithRuntimeAndHttpMetrics()
+    {
+        await fixture.Client.GetAsync("/health");
+
+        var response = await fixture.Client.GetAsync("/metrics");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("text/plain", response.Content.Headers.ContentType!.ToString());
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("dotnet_gc_last_collection_heap_size_bytes", content);
+        Assert.Contains("http_server_request_duration_seconds_count", content);
+    }
 }
 
 /// <summary>
