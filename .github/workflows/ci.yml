@@ -16,12 +16,16 @@ jobs:
         ports:
           - 5432:5432
     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Test database for API integration tests (ProfileApiTests creates it
       # via the maintenance db; the app itself runs EF MigrateAsync on boot).
       # ef-check never opens a connection — any well-formed string works there.
       # JWT and encryption keys are generated per test run; no secret is committed.
       TEST_POSTGRES: Host=localhost;Port=5432;Username=postgres;Password=postgres
       DATABASE_URL_PROFILE: Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -55,6 +59,9 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TEST_POSTGRES: Host=localhost;Port=5432;Username=postgres;Password=postgres
       DATABASE_URL_PROFILE: Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: SonarCloud skipped (SONAR_TOKEN not available)
         if: env.SONAR_TOKEN == ''
