@@ -13,7 +13,7 @@ Candidate & User Profile microservice for **Vietnam Job Platform** (`pbl6`) — 
 - `src/Profile.Core` — Domain entities (`UserProfile`, `Skill`, `WorkExperience`, `Education` `: Entity`), `IAesEncryptionService`, DTOs
 - `src/Profile.Infrastructure` — `ProfileDbContext` (`Npgsql`), EF Migrations, `AesGcmEncryptionService` (SEC-08)
 - `tests/Profile.Tests` — `xunit` unit and integration tests
-- `local-feed` — `JobPlatform.SharedKernel 0.1.0` via `nuget.config`
+- GitHub Packages feed (`nuget.config`) — `JobPlatform.SharedKernel 0.3.1`; restore needs `GITHUB_TOKEN` with `read:packages`
 
 ## Prerequisites
 
