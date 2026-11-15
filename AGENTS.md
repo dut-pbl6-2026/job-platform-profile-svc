@@ -62,8 +62,11 @@ Dual-mode authentication matching platform standard:
   - Storage format (versioned): `Base64(KeyId[1B] + Nonce[12B] + Tag[16B] + Ciphertext[NB])`. The key id selects the decryption key, so the key can rotate.
   - Active key read from the `PROFILE_ENCRYPTION_KEY` env var: a base64-encoded 32-byte (256-bit) key used directly as the AES key. Generate one with `openssl rand -base64 32`. A missing, non-base64, or wrong-length key stops startup in every environment.
   - Key id of the active key: `PROFILE_ENCRYPTION_KEY_ID` (optional, `1`-`255`, default `1`).
-  - Retired keys for decryption only: `PROFILE_ENCRYPTION_KEYS_RETIRED` (optional), comma-separated `id:base64key` entries. Ids must be unique and differ from the active id. Records with an id that is not configured fail to decrypt.
-  - Rotation: (1) add the current key to `PROFILE_ENCRYPTION_KEYS_RETIRED` as `<old id>:<old key>` on every replica and deploy; (2) set the new key as `PROFILE_ENCRYPTION_KEY` with a new `PROFILE_ENCRYPTION_KEY_ID` and deploy. Records written before step 2 still decrypt. Re-encrypting old rows is not implemented yet, so a retired key must stay configured while any record still uses it.
+  - Decrypt-only keys: `PROFILE_ENCRYPTION_KEYS_RETIRED` (optional), comma-separated `id:base64key` entries. It may hold any key that is not active: a key announced ahead of a switch, or a key retired after one. Ids must be unique and must differ from the active id. Records with an id that is not configured fail to decrypt. Never reuse an id.
+  - Rotation (rolling replicas, no record rewrite):
+    1. Put the new key in `PROFILE_ENCRYPTION_KEYS_RETIRED` as `<new id>:<new key>` and deploy to every replica. The active key does not change.
+    2. Make it active: set `PROFILE_ENCRYPTION_KEY=<new key>` and `PROFILE_ENCRYPTION_KEY_ID=<new id>`, remove the `<new id>` entry from `PROFILE_ENCRYPTION_KEYS_RETIRED`, and add `<old id>:<old key>` there. Deploy.
+    Records written before step 2 still decrypt. Re-encrypting old rows is not implemented, so the old key stays configured while any record still uses it.
 - `SEC-05 SQLi` — Always use EF Core parameterized queries, never raw string concatenation.
 - `SEC-05 CSRF` — Stateless API; CSRF N/A. Enforce `Content-Type: application/json` on mutation endpoints.
 - `SEC-06 Rate limiting` — 100 req/min per IP/user enforced at Gateway level (`GW-01`).

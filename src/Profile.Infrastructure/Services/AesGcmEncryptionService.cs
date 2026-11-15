@@ -21,7 +21,8 @@ public class AesGcmEncryptionService : IAesEncryptionService
     /// <summary>Key id stamped on new ciphertext (1-255, default 1).</summary>
     public const string KeyIdConfigurationName = "PROFILE_ENCRYPTION_KEY_ID";
 
-    /// <summary>Decrypt-only keys: comma-separated "id:base64key" entries (ids 1-255, unique, not the active id).</summary>
+    /// <summary>Decrypt-only keys: comma-separated "id:base64key" entries (ids 1-255, unique, not the active id).
+    /// Holds any key that is not active: one announced before a switch, or one retired after it.</summary>
     public const string RetiredKeysConfigurationName = "PROFILE_ENCRYPTION_KEYS_RETIRED";
 
     private const int KeySize = 32;      // AES-256

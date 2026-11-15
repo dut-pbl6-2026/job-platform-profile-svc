@@ -542,8 +542,8 @@ public class ProfileApiFixture : IAsyncLifetime
 
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
         Environment.SetEnvironmentVariable("JWT_SECRET", JwtSecret);
-        // NOTE: Program.cs prefers ConnectionStrings:ProfileDb (appsettings.Development.json)
-        // over DATABASE_URL_PROFILE, so override it via env mapping (double underscore).
+        // Program reads ConnectionStrings:ProfileDb first, then DATABASE_URL_PROFILE. Set both to the
+        // test database so neither source can point the tests elsewhere.
         var testConn = new NpgsqlConnectionStringBuilder(_serverConn) { Database = _dbName }.ToString();
         Environment.SetEnvironmentVariable("ConnectionStrings__ProfileDb", testConn);
         Environment.SetEnvironmentVariable("DATABASE_URL_PROFILE", testConn);

@@ -155,7 +155,7 @@ mise run run
 All sensitive PII fields (`phone`, `address`, `date_of_birth`) are encrypted using application-layer `AES-256-GCM` before persisting to PostgreSQL (`job_platform_profile`).
 - Unique 12-byte Nonce per encryption.
 - Master encryption key from the `PROFILE_ENCRYPTION_KEY` environment variable: base64 of 32 random bytes, used directly as the AES-256 key (`openssl rand -base64 32`). The service refuses to start if it is missing or malformed.
-- Ciphertext is versioned: `Base64(KeyId[1] + Nonce[12] + Tag[16] + Ciphertext)`. Optional `PROFILE_ENCRYPTION_KEY_ID` (default `1`) names the active key, and `PROFILE_ENCRYPTION_KEYS_RETIRED` (`id:base64key,...`) keeps old keys for decryption only. See `AGENTS.md` for the rotation steps.
+- Ciphertext is versioned: `Base64(KeyId[1] + Nonce[12] + Tag[16] + Ciphertext)`. Optional `PROFILE_ENCRYPTION_KEY_ID` (default `1`) names the active key, and `PROFILE_ENCRYPTION_KEYS_RETIRED` (`id:base64key,...`) holds decrypt-only keys. See `AGENTS.md` for the two-step rotation.
 - Public profile API (`GET /api/profiles/{id}`) strictly excludes sensitive PII fields.
 
 ## Troubleshooting
