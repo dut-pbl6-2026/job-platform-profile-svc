@@ -1,21 +1,21 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Profile.Core.Interfaces;
 
 namespace Profile.Infrastructure.Services;
 
 /// <summary>
-/// Triển khai mã hóa AES-256-GCM tầng ứng dụng — SEC-08.
-/// Format lưu trữ: Base64(Nonce[12] + Tag[16] + Ciphertext[N]).
-/// Mỗi lần Encrypt sinh Nonce ngẫu nhiên 12 bytes mới — đảm bảo hai ciphertext
-/// của cùng plaintext luôn khác nhau (probabilistic encryption).
+/// Application-layer AES-256-GCM encryption for sensitive profile fields (SEC-08).
+/// Storage format: Base64(Nonce[12] + Tag[16] + Ciphertext[N]). A fresh random nonce
+/// is generated per encryption, so equal plaintexts never produce equal ciphertexts.
 /// </summary>
 public class AesGcmEncryptionService : IAesEncryptionService
 {
-    // AES-256-GCM constants
+    public const string KeyConfigurationName = "PROFILE_ENCRYPTION_KEY";
+
+    private const int KeySize = 32;      // AES-256
     private const int NonceSize = 12;    // bytes
     private const int TagSize = 16;      // bytes
 
@@ -24,32 +24,38 @@ public class AesGcmEncryptionService : IAesEncryptionService
 
     public AesGcmEncryptionService(
         IConfiguration configuration,
-        IHostEnvironment environment,
         ILogger<AesGcmEncryptionService> logger)
     {
+        _key = ParseKey(configuration[KeyConfigurationName]);
         _logger = logger;
-        var keyStr = configuration["PROFILE_ENCRYPTION_KEY"]
-                     ?? configuration["ENCRYPTION_KEY"];
+    }
 
-        if (string.IsNullOrWhiteSpace(keyStr))
+    /// <summary>
+    /// Decodes the base64 master key and checks it is exactly 32 bytes.
+    /// Throws at startup for a missing or malformed key in every environment.
+    /// The key value is never included in the error message.
+    /// </summary>
+    public static byte[] ParseKey(string? base64Key)
+    {
+        if (string.IsNullOrWhiteSpace(base64Key))
+            throw new InvalidOperationException(
+                $"{KeyConfigurationName} is required: a base64-encoded 256-bit (32-byte) key.");
+
+        byte[] key;
+        try
         {
-            if (!environment.IsDevelopment())
-            {
-                // SEC-08 fail-fast: never boot non-Development on a public dev key.
-                throw new InvalidOperationException(
-                    "PROFILE_ENCRYPTION_KEY (or ENCRYPTION_KEY) is not configured. " +
-                    "Set it before deploying outside Development.");
-            }
-
-            // SEC-08: Fallback dev key — Development ONLY, never Production.
-            keyStr = "dev-profile-enc-key-change-me!!";
-            _logger.LogWarning(
-                "PROFILE_ENCRYPTION_KEY not set — using insecure dev key. " +
-                "Set PROFILE_ENCRYPTION_KEY (32+ chars) before deploying.");
+            key = Convert.FromBase64String(base64Key);
+        }
+        catch (FormatException)
+        {
+            throw new InvalidOperationException($"{KeyConfigurationName} must be valid base64.");
         }
 
-        // Derive exactly 32 bytes for AES-256 using SHA-256 of the key string
-        _key = SHA256.HashData(Encoding.UTF8.GetBytes(keyStr));
+        if (key.Length != KeySize)
+            throw new InvalidOperationException(
+                $"{KeyConfigurationName} must decode to exactly {KeySize} bytes, got {key.Length}.");
+
+        return key;
     }
 
     /// <inheritdoc/>
@@ -65,7 +71,6 @@ public class AesGcmEncryptionService : IAesEncryptionService
         using var aes = new AesGcm(_key, TagSize);
         aes.Encrypt(nonce, plainBytes, cipherBytes, tag);
 
-        // Pack: Nonce[12] + Tag[16] + Ciphertext[N]
         var packed = new byte[NonceSize + TagSize + cipherBytes.Length];
         nonce.CopyTo(packed, 0);
         tag.CopyTo(packed, NonceSize);

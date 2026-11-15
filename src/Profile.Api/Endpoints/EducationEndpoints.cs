@@ -6,7 +6,7 @@ using Profile.Infrastructure.Data;
 namespace Profile.Api.Endpoints;
 
 /// <summary>
-/// Minimal API endpoints quản lý học vấn — PROFILE-01-04.
+/// Minimal API endpoints for education entries (PROFILE-01-04).
 /// </summary>
 public static class EducationEndpoints
 {
@@ -49,9 +49,9 @@ public static class EducationEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var err = ValidateDto(dto.Institution, dto.Degree, dto.Field, dto.Grade, dto.StartDate, dto.EndDate);
         if (err is not null) return err;
@@ -67,7 +67,7 @@ public static class EducationEndpoints
         }
         catch (DbUpdateException ex)
         {
-            // Defense in depth: length violations → 400, không để 500.
+            // Defense in depth: length violations return 400, not 500.
             logger.LogWarning(ex, "Rejected education insert for profile {ProfileId}", profile.Id);
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -86,9 +86,9 @@ public static class EducationEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var err = ValidateDto(dto.Institution, dto.Degree, dto.Field, dto.Grade, dto.StartDate, dto.EndDate);
         if (err is not null) return err;
@@ -126,9 +126,9 @@ public static class EducationEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var edu = await db.Educations
             .Include(e => e.Profile)

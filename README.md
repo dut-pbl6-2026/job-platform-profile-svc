@@ -67,14 +67,13 @@ mise run run              # dotnet run --project src/Profile.Api
 curl http://localhost:5005/health   # {"status":"ok","service":"profile"}
 ```
 
-Sample requests:
+Sample requests (set `TOKEN` to a JWT issued by auth-svc):
 
 ### Upsert profile (Candidate)
 ```bash
 curl -X PUT http://localhost:5005/api/profiles/me \
   -H "Content-Type: application/json" \
-  -H "X-User-Id: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" \
-  -H "X-User-Role: Candidate" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "fullName": "Nguyen Van A",
     "phone": "0901234567",
@@ -89,19 +88,20 @@ curl -X PUT http://localhost:5005/api/profiles/me \
 ### View private profile (with decrypted PII)
 ```bash
 curl http://localhost:5005/api/profiles/me \
-  -H "X-User-Id: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-### View public profile (PII phone/address/DOB masked/excluded)
+### View public profile (PII excluded; requires a token)
 ```bash
-curl http://localhost:5005/api/profiles/a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+curl http://localhost:5005/api/profiles/a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Add skill
 ```bash
 curl -X POST http://localhost:5005/api/profiles/skills \
   -H "Content-Type: application/json" \
-  -H "X-User-Id: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "C# / .NET", "proficiency": 5, "yearsOfExperience": 4}'
 ```
 
@@ -109,7 +109,7 @@ curl -X POST http://localhost:5005/api/profiles/skills \
 ```bash
 curl -X POST http://localhost:5005/api/profiles/experiences \
   -H "Content-Type: application/json" \
-  -H "X-User-Id: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "companyName": "Tech Corp",
     "position": "Software Engineer",
@@ -119,12 +119,16 @@ curl -X POST http://localhost:5005/api/profiles/experiences \
   }'
 ```
 
+## Authentication
+
+Every `/api/profiles` request must carry a JWT issued by auth-svc: `Authorization: Bearer <token>`. `JWT_SECRET` (≥ 32 bytes) must match the issuer's secret. Identity comes only from the token; `X-User-Id` headers are ignored unless `DEV_AUTH_ENABLED=true` in Development.
+
 ## Security & Encryption (SEC-08)
 
 All sensitive PII fields (`phone`, `address`, `date_of_birth`) are encrypted using application-layer `AES-256-GCM` before persisting to PostgreSQL (`job_platform_profile`).
 - Unique 12-byte Nonce per encryption.
 - Storage format: `Base64(Nonce[12B] + Tag[16B] + Ciphertext[NB])`.
-- Master encryption key derived from `PROFILE_ENCRYPTION_KEY` environment variable.
+- Master encryption key from the `PROFILE_ENCRYPTION_KEY` environment variable: base64 of 32 random bytes, used directly as the AES-256 key (`openssl rand -base64 32`). The service refuses to start if it is missing or malformed.
 - Public profile API (`GET /api/profiles/{id}`) strictly excludes sensitive PII fields.
 
 ## Troubleshooting

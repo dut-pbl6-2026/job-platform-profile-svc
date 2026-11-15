@@ -6,7 +6,7 @@ using Profile.Infrastructure.Data;
 namespace Profile.Api.Endpoints;
 
 /// <summary>
-/// Minimal API endpoints quản lý kinh nghiệm làm việc — PROFILE-01-03.
+/// Minimal API endpoints for work experience (PROFILE-01-03).
 /// </summary>
 public static class ExperienceEndpoints
 {
@@ -50,9 +50,9 @@ public static class ExperienceEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var validationError = ValidateDto(dto.Company, dto.Title, dto.Description, dto.StartDate, dto.EndDate, dto.IsCurrent);
         if (validationError is not null)
@@ -70,7 +70,7 @@ public static class ExperienceEndpoints
         }
         catch (DbUpdateException ex)
         {
-            // Defense in depth: length violations → 400, không để 500.
+            // Defense in depth: length violations return 400, not 500.
             logger.LogWarning(ex, "Rejected experience insert for profile {ProfileId}", profile.Id);
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -93,9 +93,9 @@ public static class ExperienceEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var validationError = ValidateDto(dto.Company, dto.Title, dto.Description, dto.StartDate, dto.EndDate, dto.IsCurrent);
         if (validationError is not null)
@@ -137,9 +137,9 @@ public static class ExperienceEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var exp = await db.WorkExperiences
             .Include(e => e.Profile)

@@ -8,14 +8,15 @@ using Profile.Infrastructure.Data;
 namespace Profile.Api.Endpoints;
 
 /// <summary>
-/// Minimal API endpoints cho Profile CRUD — PROFILE-01-01, PROFILE-01-05, PROFILE-01-06.
+/// Minimal API endpoints for profile CRUD (PROFILE-01-01, PROFILE-01-05, PROFILE-01-06).
 /// </summary>
 public static class ProfileEndpoints
 {
     public static IEndpointRouteBuilder MapProfileEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/profiles")
-                       .WithTags("Profiles");
+                       .WithTags("Profiles")
+                       .RequireAuthorization();
 
         // PROFILE-01-01: Upsert profile of current authenticated user
         group.MapPut("/me", UpsertProfile)
@@ -33,7 +34,7 @@ public static class ProfileEndpoints
              .ProducesProblem(StatusCodes.Status401Unauthorized)
              .ProducesProblem(StatusCodes.Status404NotFound);
 
-        // PROFILE-01-06: Get public profile by userId — NO PII
+        // PROFILE-01-06: public profile by userId. Authenticated callers only; the DTO carries no PII.
         group.MapGet("/{userId:guid}", GetPublicProfile)
              .WithName("GetPublicProfile")
              .WithSummary("Get a public profile by userId. PII fields excluded (PROFILE-01-06, SEC-08).")
@@ -51,9 +52,9 @@ public static class ProfileEndpoints
         IAesEncryptionService aes,
         ILogger<Program> logger)
     {
-        var userId = GetUserId(context);
+        var userId = GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return UnauthorizedIdentity();
 
         if (string.IsNullOrWhiteSpace(dto.FullName))
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -95,9 +96,9 @@ public static class ProfileEndpoints
         ProfileDbContext db,
         IAesEncryptionService aes)
     {
-        var userId = GetUserId(context);
+        var userId = GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return UnauthorizedIdentity();
 
         var profile = await db.Profiles
             .Include(p => p.Skills)
@@ -166,7 +167,7 @@ public static class ProfileEndpoints
         if (profile is null)
             return Results.NotFound(new { message = "Profile not found." });
 
-        // PublicProfileDto MUST NOT include phone, address, dateOfBirth (SEC-08)
+        // PublicProfileDto must not include phone, address or dateOfBirth (SEC-08)
         var dto = new PublicProfileDto
         {
             Id = profile.Id,
@@ -209,15 +210,15 @@ public static class ProfileEndpoints
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     /// <summary>
-    /// FullName mặc định khi auto-create profile từ POST skills/experiences/educations.
-    /// User nên PUT /me để đặt tên thật — giá trị này chỉ là placeholder, không phải dữ liệu thật.
+    /// Placeholder FullName for a profile auto-created by POST skills/experiences/educations.
+    /// The user should PUT /me to set a real name.
     /// </summary>
     internal const string AutoCreatedFullName = "Unknown";
 
     /// <summary>
-    /// Tìm profile theo userId, auto-create nếu chưa có (prerequisite cho POST skills/experiences/educations).
-    /// Chịu race: concurrent POSTs có thể cùng insert → bắt DbUpdateException vi phạm
-    /// IX_profiles_user_id unique rồi đọc lại thay vì trả 500.
+    /// Finds the profile for userId, creating it if missing (prerequisite for POST skills/experiences/educations).
+    /// Race-safe: when a concurrent request inserts the same user's profile first, the unique
+    /// IX_profiles_user_id violation is caught and the existing row is read back instead of returning 500.
     /// </summary>
     internal static async Task<UserProfile> GetOrCreateProfileAsync(
         ProfileDbContext db,
@@ -236,7 +237,7 @@ public static class ProfileEndpoints
         }
         catch (DbUpdateException)
         {
-            // Race: request khác đã insert profile cho user này trước → đọc lại.
+            // A concurrent request inserted this user's profile first: read it back.
             db.ChangeTracker.Clear();
             var raced = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
             if (raced is not null)
@@ -248,18 +249,16 @@ public static class ProfileEndpoints
         return profile;
     }
 
-    internal static Guid GetUserId(HttpContext context)
+    /// <summary>
+    /// Returns the caller's user id from the authenticated principal (NameIdentifier claim),
+    /// or Guid.Empty when the claim is missing or not a GUID. Request headers are never read.
+    /// </summary>
+    internal static Guid GetCurrentUserId(HttpContext context)
     {
-        // Try Claims first (set by DevAuthMiddleware or JWT Bearer)
         var claimValue = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.IsNullOrWhiteSpace(claimValue) && Guid.TryParse(claimValue, out var claimGuid))
-            return claimGuid;
-
-        // Fallback: read X-User-Id header directly (gateway forward pattern)
-        var headerValue = context.Request.Headers["X-User-Id"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(headerValue) && Guid.TryParse(headerValue, out var headerGuid))
-            return headerGuid;
-
-        return Guid.Empty;
+        return Guid.TryParse(claimValue, out var userId) ? userId : Guid.Empty;
     }
+
+    internal static IResult UnauthorizedIdentity() =>
+        Results.Problem("Authenticated user id is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
 }
