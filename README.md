@@ -121,7 +121,7 @@ curl -X POST http://localhost:5005/api/profiles/experiences \
 
 ## Authentication
 
-Every `/api/profiles` request must carry a JWT issued by auth-svc: `Authorization: Bearer <token>`. `JWT_SECRET` (≥ 32 bytes) must match the issuer's secret. Identity comes only from the token; `X-User-Id` headers are ignored unless `DEV_AUTH_ENABLED=true` in Development.
+Every `/api/profiles` request must carry an RS256 JWT issued by auth-svc: `Authorization: Bearer <token>`. The public keys come from auth-svc's JWKS at `Jwt__MetadataAddress`; this service holds no secret. Identity comes only from the token; `X-User-Id` headers are ignored unless `DEV_AUTH_ENABLED=true` in Development.
 
 ## Configuration
 
@@ -130,7 +130,7 @@ Set these environment variables before `mise run run` (the service reads process
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `DATABASE_URL_PROFILE` | yes, every environment | Npgsql connection string (or `ConnectionStrings__ProfileDb`). No committed fallback. |
-| `JWT_SECRET` | yes | HS256 secret, at least 32 bytes, shared with auth-svc. |
+| `Jwt__MetadataAddress` | yes | auth-svc discovery URL, e.g. `http://auth-svc:5001/.well-known/openid-configuration`. |
 | `PROFILE_ENCRYPTION_KEY` | yes | Base64 of 32 random bytes (`openssl rand -base64 32`). |
 | `PROFILE_ENCRYPTION_KEY_ID` | no | Id of the active key, 1-255 (default 1). |
 | `PROFILE_ENCRYPTION_KEYS_RETIRED` | no | Decrypt-only keys, `id:base64key,...`. |
@@ -140,7 +140,7 @@ Example for local Development:
 
 ```bash
 export DATABASE_URL_PROFILE='Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres'
-export JWT_SECRET="$(openssl rand -base64 48)"   # must match the auth-svc secret for real tokens
+export Jwt__MetadataAddress="http://localhost:5001/.well-known/openid-configuration"   # auth-svc JWKS source
 export PROFILE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 mise run run
 ```

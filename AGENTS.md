@@ -49,7 +49,7 @@ Dependency: `Api → Infrastructure → Core → SharedKernel` (`PackageReferenc
 ## Authentication & Authorization
 
 Dual-mode authentication matching platform standard:
-- **JWT Bearer (every environment)**: `Authorization: Bearer <token>` is validated in-service (`ValidateIssuer/Audience=job-platform`, `ValidateLifetime`, `ClockSkew=Zero`) with the HS256 key from `JWT_SECRET` (≥ 32 bytes). Startup fails if it is missing or too short.
+- **JWT Bearer (every environment)**: `Authorization: Bearer <token>` is validated in-service (`Auth/JwtBearerRs256.cs`: RS256 only, `ValidateIssuer/Audience=job-platform`, `ValidateLifetime`, `ClockSkew=Zero`, `kid` and `sub` required). Keys come from auth-svc's JWKS via `Jwt__MetadataAddress`. Startup fails if it is missing.
 - **Identity**: Only the `ClaimTypes.NameIdentifier` claim of the validated token is used. Request headers (`X-User-Id`, `X-User-Role`) are never trusted for identity.
 - **DevAuthMiddleware (local opt-in)**: Registered only when `DEV_AUTH_ENABLED=true` and the environment is `Development`; startup fails if the flag is set anywhere else. It builds a principal from `X-User-Id` / `X-User-Role` only for requests that are not already authenticated.
 - All `/api/profiles/*` endpoints require authentication, including the public `GET /api/profiles/{userId}` (PROFILE-01-06), which returns the PII-free DTO.
@@ -134,7 +134,7 @@ var conn = builder.Configuration.GetConnectionString("ProfileDb")
 
 - `appsettings.json` and `appsettings.Development.json` MUST NOT contain connection strings or credentials. The database connection string is read from `DATABASE_URL_PROFILE` (or `ConnectionStrings__ProfileDb`) in every environment, and startup fails when it is missing or blank.
 - The single source of truth for all env values is `../job-platform-infra/envs/.env.dev.example` — use `mise run sync-env` to sync.
-- Required env vars for this service (every environment): `DATABASE_URL_PROFILE`, `JWT_SECRET` (≥ 32 bytes), `PROFILE_ENCRYPTION_KEY` (base64 of 32 random bytes).
+- Required env vars for this service (every environment): `DATABASE_URL_PROFILE`, `Jwt__MetadataAddress`, `PROFILE_ENCRYPTION_KEY` (base64 of 32 random bytes).
 - Optional env vars: `PROFILE_ENCRYPTION_KEY_ID` (active key id, default `1`), `PROFILE_ENCRYPTION_KEYS_RETIRED` (decrypt-only keys, see SEC-08), `METRICS_ENABLED`, `DEV_AUTH_ENABLED` (Development only).
 - Local development (`dotnet run` does not read `.env`): export the required variables in the shell first, for example `export DATABASE_URL_PROFILE='Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres'`. The same names are used by the dev compose file.
 - Optional local-only env var: `DEV_AUTH_ENABLED=true` (Development only) to authenticate with `X-User-Id` instead of a token.
