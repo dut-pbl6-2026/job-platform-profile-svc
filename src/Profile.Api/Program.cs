@@ -39,46 +39,40 @@ builder.Services.AddDbContext<ProfileDbContext>(opts =>
     opts.UseNpgsql(connStr));
 builder.Services.AddServiceHealthChecks<ProfileDbContext>();
 
-// ── AES-256-GCM Encryption Service (SEC-08) ───────────────────────────────
-// Fail-fast in non-Development if encryption key is missing
-var encKey = builder.Configuration["PROFILE_ENCRYPTION_KEY"]
-             ?? builder.Configuration["ENCRYPTION_KEY"];
-
-if (string.IsNullOrWhiteSpace(encKey) && !builder.Environment.IsDevelopment())
-{
-    throw new InvalidOperationException(
-        "PROFILE_ENCRYPTION_KEY is required in non-Development environments (SEC-08).");
-}
-
+// ── AES-256-GCM encryption (SEC-08) ───────────────────────────────────────
+// The key is validated when the service is first resolved; Program resolves it
+// before the app runs, so a missing or malformed key stops startup.
 builder.Services.AddSingleton<IAesEncryptionService, AesGcmEncryptionService>();
 
-// ── Authentication ─────────────────────────────────────────────────────────
-if (builder.Environment.IsProduction() || builder.Environment.IsStaging())
-{
-    var jwtSecret = builder.Configuration["JWT_SECRET"]
-                    ?? throw new InvalidOperationException("JWT_SECRET is required in Production.");
+// ── Authentication: identity comes only from a validated JWT (AGENTS.md, GW-01) ──
+// The service is publicly reachable, so it validates tokens itself in every environment
+// instead of trusting gateway-forwarded headers.
+var jwtSecret = builder.Configuration["JWT_SECRET"];
+if (string.IsNullOrWhiteSpace(jwtSecret) || Encoding.UTF8.GetByteCount(jwtSecret) < 32)
+    throw new InvalidOperationException("JWT_SECRET is required and must be at least 32 bytes.");
 
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(opts =>
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(opts =>
+    {
+        opts.TokenValidationParameters = new TokenValidationParameters
         {
-            opts.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuer = true,
-                ValidIssuer = "job-platform",
-                ValidateAudience = true,
-                ValidAudience = "job-platform",
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero,
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            };
-        });
-}
+            ValidateIssuer = true,
+            ValidIssuer = "job-platform",
+            ValidateAudience = true,
+            ValidAudience = "job-platform",
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        };
+    });
 
-// Authorization services cho mọi môi trường — endpoint dùng .RequireAuthorization()
-// (Skills/Experiences/Educations). Dev pipeline không có UseAuthorization nên
-// DevAuthMiddleware + check X-User-Id thủ công vẫn quyết định 401 như trước.
 builder.Services.AddAuthorization();
+
+// Header-based identity (DevAuthMiddleware) is an explicit local-only opt-in.
+var devAuthEnabled = builder.Configuration.GetValue<bool>("DEV_AUTH_ENABLED");
+if (devAuthEnabled && !builder.Environment.IsDevelopment())
+    throw new InvalidOperationException("DEV_AUTH_ENABLED is only allowed in the Development environment.");
 
 // ── Problem Details RFC 7807 (REL-07) ─────────────────────────────────────
 builder.Services.AddProblemDetails();
@@ -94,13 +88,13 @@ builder.Services.AddSwaggerGen(opts =>
         Description = "User Profile CRUD, Skills, Work Experience, Education — PBL6 (PROFILE-01 to PROFILE-01-06, SEC-08)",
     });
 
-    // Dev auth: allow passing X-User-Id & X-User-Role headers directly in Swagger UI
+    // Dev only: X-User-Id header, honoured only when DEV_AUTH_ENABLED=true in Development.
     opts.AddSecurityDefinition("DevHeader", new OpenApiSecurityScheme
     {
         Name = "X-User-Id",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
-        Description = "Dev mode: Pass your User UUID as X-User-Id header (no JWT required in Development).",
+        Description = "Requires DEV_AUTH_ENABLED=true (Development only). Pass a user UUID as the X-User-Id header.",
     });
 
     opts.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -110,7 +104,7 @@ builder.Services.AddSwaggerGen(opts =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "Production: Enter 'Bearer {token}'.",
+        Description = "Enter 'Bearer {token}'.",
     });
 
     opts.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -134,6 +128,9 @@ builder.Services.ConfigureHttpJsonOptions(opts =>
 });
 
 var app = builder.Build();
+
+// Resolve the encryption service now so a missing or malformed key fails startup, not the first request.
+_ = app.Services.GetRequiredService<IAesEncryptionService>();
 
 // ── Auto-migrate on startup (REL-01) ──────────────────────────────────────
 using (var scope = app.Services.CreateScope())
@@ -164,19 +161,19 @@ if (app.Environment.IsDevelopment())
         opts.SwaggerEndpoint("/swagger/v1/swagger.json", "Profile Service v1");
         opts.RoutePrefix = "swagger";
     });
-
-    // DevAuthMiddleware: simulate gateway header forwarding in Development (no JWT required)
-    app.UseMiddleware<DevAuthMiddleware>();
 }
-else
+
+app.UseAuthentication();
+
+if (devAuthEnabled)
 {
-    app.UseAuthentication();
+    app.UseMiddleware<DevAuthMiddleware>();
 }
 
 app.UseAuthorization();
 
-// Monitoring: /metrics is meant for the internal scrape network; keep it off in
-// Production unless METRICS_ENABLED=true (all services are publicly reachable).
+// /metrics is meant for the internal scrape network; keep it off in Production
+// unless METRICS_ENABLED=true (all services are publicly reachable).
 if (app.Configuration.GetValue("METRICS_ENABLED", !app.Environment.IsProduction()))
 {
     app.MapPrometheusScrapingEndpoint();

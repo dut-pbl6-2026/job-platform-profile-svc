@@ -44,23 +44,23 @@ Dependency: `Api → Infrastructure → Core → SharedKernel` (`PackageReferenc
 - `POST /api/profiles/educations` (`PROFILE-01-04`) — Add education entry (`institution`, `degree`, `fieldOfStudy`, `startDate`, `endDate`, `grade`).
 - `PUT /api/profiles/educations/{eduId}` (`PROFILE-01-04`) — Update education entry (owner only).
 - `DELETE /api/profiles/educations/{eduId}` (`PROFILE-01-04`) — Delete education entry (owner only).
-- Gateway `GW-01` routes `/api/profiles/*` → Profile Service, validates JWT then forwards `X-User-Id` / `X-User-Role`.
+- Gateway `GW-01` routes `/api/profiles/*` → Profile Service after validating the JWT (`Authenticated` policy). The profile service validates the same JWT itself.
 
 ## Authentication & Authorization
 
 Dual-mode authentication matching platform standard:
-- **Gateway Forwarding (Production / Staging)**: Gateway validates JWT and forwards `X-User-Id` and `X-User-Role` headers.
-- **Direct JWT Bearer**: Configured via `SharedKernel.JwtOptions` (`ValidateIssuer=true Audience=job-platform ClockSkew=Zero`).
-- **DevAuthMiddleware (Development)**: Reads `X-User-Id` and `X-User-Role` headers directly when testing without gateway. Fallback dev secret: **never** hardcode; read from `JWT_SECRET` env var.
-- User Context extraction: Read `X-User-Id` header or `ClaimTypes.NameIdentifier` claim. Validate non-empty on all protected endpoints.
-- Ownership checks: Users may only update/delete their own profile, skills, experiences, and educations (`403 Forbidden` if unauthorized).
+- **JWT Bearer (every environment)**: `Authorization: Bearer <token>` is validated in-service (`ValidateIssuer/Audience=job-platform`, `ValidateLifetime`, `ClockSkew=Zero`) with the HS256 key from `JWT_SECRET` (≥ 32 bytes). Startup fails if it is missing or too short.
+- **Identity**: Only the `ClaimTypes.NameIdentifier` claim of the validated token is used. Request headers (`X-User-Id`, `X-User-Role`) are never trusted for identity.
+- **DevAuthMiddleware (local opt-in)**: Registered only when `DEV_AUTH_ENABLED=true` and the environment is `Development`; startup fails if the flag is set anywhere else. It builds a principal from `X-User-Id` / `X-User-Role` only for requests that are not already authenticated.
+- All `/api/profiles/*` endpoints require authentication, including the public `GET /api/profiles/{userId}` (PROFILE-01-06), which returns the PII-free DTO.
+- Ownership checks: `/me` and the write endpoints act on the caller's own profile, skills, experiences, and educations (`403 Forbidden` for another user's rows).
 
 ## Security (SRS 6 `SEC-*`)
 
 - `SEC-08 Sensitive Data Encryption` — Application-layer `AES-256-GCM` via `AesGcmEncryptionService`. Sensitive fields (`phone`, `address`, `date_of_birth`) encrypted before saving to DB and decrypted upon retrieval by owner.
   - Per-record 12-byte random Nonce (`RandomNumberGenerator.GetBytes(12)`).
   - Storage format: `Base64(Nonce[12B] + Tag[16B] + Ciphertext[NB])`.
-  - Master key read from `PROFILE_ENCRYPTION_KEY` or `ENCRYPTION_KEY` env var. In non-Development environments, missing key causes immediate startup failure (fail-fast).
+  - Master key read from the `PROFILE_ENCRYPTION_KEY` env var: a base64-encoded 32-byte (256-bit) key used directly as the AES key. Generate one with `openssl rand -base64 32`. A missing, non-base64, or wrong-length key stops startup in every environment.
 - `SEC-05 SQLi` — Always use EF Core parameterized queries, never raw string concatenation.
 - `SEC-05 CSRF` — Stateless API; CSRF N/A. Enforce `Content-Type: application/json` on mutation endpoints.
 - `SEC-06 Rate limiting` — 100 req/min per IP/user enforced at Gateway level (`GW-01`).
@@ -129,7 +129,8 @@ var conn = builder.Configuration.GetConnectionString("ProfileDb")
 - `appsettings.json` MAY contain placeholder comments but MUST NOT contain real credentials.
 - `appsettings.Development.json` MAY point to `localhost` **only** for local development convenience.
 - The single source of truth for all env values is `../job-platform-infra/envs/.env.dev.example` — use `mise run sync-env` to sync.
-- Required env vars for this service: `DATABASE_URL_PROFILE`, `JWT_SECRET`, `PROFILE_ENCRYPTION_KEY`.
+- Required env vars for this service: `DATABASE_URL_PROFILE`, `JWT_SECRET` (≥ 32 bytes), `PROFILE_ENCRYPTION_KEY` (base64 of 32 random bytes).
+- Optional local-only env var: `DEV_AUTH_ENABLED=true` (Development only) to authenticate with `X-User-Id` instead of a token.
 
 ## 2026 best practice (NFR `MAINT`)
 

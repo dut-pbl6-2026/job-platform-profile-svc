@@ -6,7 +6,7 @@ using Profile.Infrastructure.Data;
 namespace Profile.Api.Endpoints;
 
 /// <summary>
-/// Minimal API endpoints quản lý kỹ năng — PROFILE-01-02.
+/// Minimal API endpoints for skills (PROFILE-01-02).
 /// </summary>
 public static class SkillEndpoints
 {
@@ -43,9 +43,9 @@ public static class SkillEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         if (string.IsNullOrWhiteSpace(dto.Name))
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -82,7 +82,7 @@ public static class SkillEndpoints
         }
         catch (DbUpdateException ex)
         {
-            // Defense in depth: length/check-constraint violations → 400, không để 500.
+            // Defense in depth: length and check-constraint violations return 400, not 500.
             logger.LogWarning(ex, "Rejected skill insert for profile {ProfileId}", profile.Id);
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -104,9 +104,9 @@ public static class SkillEndpoints
         ProfileDbContext db,
         ILogger<Program> logger)
     {
-        var userId = ProfileEndpoints.GetUserId(context);
+        var userId = ProfileEndpoints.GetCurrentUserId(context);
         if (userId == Guid.Empty)
-            return Results.Problem("X-User-Id header is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+            return ProfileEndpoints.UnauthorizedIdentity();
 
         var skill = await db.Skills
             .Include(s => s.Profile)

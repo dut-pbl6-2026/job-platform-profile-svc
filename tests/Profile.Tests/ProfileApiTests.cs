@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -23,7 +24,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         HttpMethod method, string url, string userId, object? body = null)
     {
         var request = new HttpRequestMessage(method, url);
-        request.Headers.Add("X-User-Id", userId);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", TestTokens.Create(userId));
         if (body is not null)
             request.Content = JsonContent.Create(body);
         return await fixture.Client.SendAsync(request);
@@ -65,11 +66,82 @@ public class ProfileApiTests(ProfileApiFixture fixture)
     }
 
     [Fact]
-    public async Task GetMe_WithoutHeader_Returns401()
+    public async Task GetMe_WithoutToken_Returns401()
     {
         var res = await fixture.Client.GetAsync("/api/profiles/me");
 
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMe_WithUserIdHeaderOnly_Returns401()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/profiles/me");
+        request.Headers.Add("X-User-Id", NewUser());
+
+        var res = await fixture.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task PutMe_WithUserIdHeaderOnly_Returns401_AndWritesNothing()
+    {
+        var victim = NewUser();
+        await SendAsync(HttpMethod.Put, "/api/profiles/me", victim, new { fullName = "Victim" });
+
+        var request = new HttpRequestMessage(HttpMethod.Put, "/api/profiles/me")
+        {
+            Content = JsonContent.Create(new { fullName = "Attacker" }),
+        };
+        request.Headers.Add("X-User-Id", victim);
+        var res = await fixture.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+        var get = await SendAsync(HttpMethod.Get, "/api/profiles/me", victim);
+        using var doc = await AsJsonAsync(get);
+        Assert.Equal("Victim", doc.RootElement.GetProperty("fullName").GetString());
+    }
+
+    [Fact]
+    public async Task GetMe_TokenUserWinsOverUserIdHeader()
+    {
+        var owner = NewUser();
+        var caller = NewUser();
+        await SendAsync(HttpMethod.Put, "/api/profiles/me", owner, new { fullName = "Owner" });
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/profiles/me");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", TestTokens.Create(caller));
+        request.Headers.Add("X-User-Id", owner);
+        var res = await fixture.Client.SendAsync(request);
+
+        // The caller has no profile; the spoofed header must not reveal the owner's.
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task PutMe_CannotModifyAnotherUsersProfile()
+    {
+        var owner = NewUser();
+        var attacker = NewUser();
+        await SendAsync(HttpMethod.Put, "/api/profiles/me", owner, new { fullName = "Owner" });
+
+        var request = new HttpRequestMessage(HttpMethod.Put, "/api/profiles/me")
+        {
+            Content = JsonContent.Create(new { fullName = "Attacker" }),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", TestTokens.Create(attacker));
+        request.Headers.Add("X-User-Id", owner);
+        var put = await fixture.Client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        var ownerView = await SendAsync(HttpMethod.Get, "/api/profiles/me", owner);
+        using var ownerDoc = await AsJsonAsync(ownerView);
+        Assert.Equal("Owner", ownerDoc.RootElement.GetProperty("fullName").GetString());
+
+        var attackerView = await SendAsync(HttpMethod.Get, "/api/profiles/me", attacker);
+        using var attackerDoc = await AsJsonAsync(attackerView);
+        Assert.Equal("Attacker", attackerDoc.RootElement.GetProperty("fullName").GetString());
     }
 
     [Fact]
@@ -93,7 +165,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
             dateOfBirth = "2000-01-01",
         });
 
-        var res = await fixture.Client.GetAsync($"/api/profiles/{user}");
+        var res = await SendAsync(HttpMethod.Get, $"/api/profiles/{user}", NewUser());
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
         var text = await res.Content.ReadAsStringAsync();
@@ -103,6 +175,17 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         Assert.False(doc.RootElement.TryGetProperty("address", out _));
         Assert.False(doc.RootElement.TryGetProperty("dateOfBirth", out _));
         Assert.Equal("Public Person", doc.RootElement.GetProperty("fullName").GetString());
+    }
+
+    [Fact]
+    public async Task GetPublicProfile_WithoutToken_Returns401()
+    {
+        var user = NewUser();
+        await SendAsync(HttpMethod.Put, "/api/profiles/me", user, new { fullName = "Someone" });
+
+        var res = await fixture.Client.GetAsync($"/api/profiles/{user}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
     }
 
     // ── PROFILE-01-02: skills ─────────────────────────────────────────────
@@ -310,7 +393,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
 }
 
 /// <summary>
-/// Shared API fixture: spins up the real app (Development, DevAuth on)
+/// Shared API fixture: spins up the real app (Development, JWT auth, DevAuth off)
 /// against a dedicated Postgres database, migrated via EF.
 /// </summary>
 [CollectionDefinition("ProfileApi")]
@@ -318,6 +401,9 @@ public class ProfileApiCollection : ICollectionFixture<ProfileApiFixture>;
 
 public class ProfileApiFixture : IAsyncLifetime
 {
+    /// <summary>Per-run JWT signing secret, shared with <see cref="TestTokens"/>.</summary>
+    public static string JwtSecret { get; } = RandomBase64(48);
+
     public HttpClient Client { get; private set; } = null!;
     private WebApplicationFactory<Program> _factory = null!;
     private string _dbName = "";
@@ -347,19 +433,21 @@ public class ProfileApiFixture : IAsyncLifetime
         }
 
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+        Environment.SetEnvironmentVariable("JWT_SECRET", JwtSecret);
         // NOTE: Program.cs prefers ConnectionStrings:ProfileDb (appsettings.Development.json)
         // over DATABASE_URL_PROFILE, so override it via env mapping (double underscore).
         var testConn = new NpgsqlConnectionStringBuilder(_serverConn) { Database = _dbName }.ToString();
         Environment.SetEnvironmentVariable("ConnectionStrings__ProfileDb", testConn);
         Environment.SetEnvironmentVariable("DATABASE_URL_PROFILE", testConn);
-        Environment.SetEnvironmentVariable("PROFILE_ENCRYPTION_KEY",
-            Environment.GetEnvironmentVariable("PROFILE_ENCRYPTION_KEY")
-            ?? "test-profile-encryption-key-32-chars!!");
+        Environment.SetEnvironmentVariable("PROFILE_ENCRYPTION_KEY", RandomBase64(32));
 
         // Startup runs EF MigrateAsync — creates the schema.
         _factory = new WebApplicationFactory<Program>();
         Client = _factory.CreateClient();
     }
+
+    private static string RandomBase64(int byteCount) =>
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(byteCount));
 
     public async Task DisposeAsync()
     {

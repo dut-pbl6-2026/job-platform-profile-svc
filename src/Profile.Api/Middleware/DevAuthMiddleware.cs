@@ -3,12 +3,14 @@ using System.Security.Claims;
 namespace Profile.Api.Middleware;
 
 /// <summary>
-/// DevAuthMiddleware — chỉ kích hoạt trong môi trường Development.
-/// Đọc X-User-Id và X-User-Role từ request header và tổng hợp thành ClaimsPrincipal,
-/// giả lập hành vi của YARP Gateway khi forward headers từ JWT đã validate (PROFILE-01, GW-01).
+/// Local-development identity shortcut, registered only when DEV_AUTH_ENABLED=true in the
+/// Development environment (see Program.cs). Builds a principal from the X-User-Id and
+/// X-User-Role headers when the request is not already authenticated by a JWT.
 /// </summary>
 public class DevAuthMiddleware
 {
+    private const string DefaultRole = "Candidate";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<DevAuthMiddleware> _logger;
 
@@ -20,23 +22,25 @@ public class DevAuthMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var userIdStr = context.Request.Headers["X-User-Id"].FirstOrDefault();
-        var userRole = context.Request.Headers["X-User-Role"].FirstOrDefault() ?? "Candidate";
-
-        if (!string.IsNullOrWhiteSpace(userIdStr) && Guid.TryParse(userIdStr, out var userId))
+        if (context.User.Identity?.IsAuthenticated != true)
         {
-            var claims = new List<Claim>
+            var userIdStr = context.Request.Headers["X-User-Id"].FirstOrDefault();
+            var userRole = context.Request.Headers["X-User-Role"].FirstOrDefault() ?? DefaultRole;
+
+            if (!string.IsNullOrWhiteSpace(userIdStr) && Guid.TryParse(userIdStr, out var userId))
             {
-                new(ClaimTypes.NameIdentifier, userId.ToString()),
-                new(ClaimTypes.Role, userRole),
-            };
+                var claims = new List<Claim>
+                {
+                    new(ClaimTypes.NameIdentifier, userId.ToString()),
+                    new(ClaimTypes.Role, userRole),
+                };
 
-            var identity = new ClaimsIdentity(claims, authenticationType: "DevHeader");
-            context.User = new ClaimsPrincipal(identity);
+                context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "DevHeader"));
 
-            _logger.LogDebug(
-                "DevAuthMiddleware: authenticated user {UserId} with role {Role}",
-                userId, userRole);
+                _logger.LogDebug(
+                    "DevAuthMiddleware: authenticated user {UserId} with role {Role}",
+                    userId, userRole);
+            }
         }
 
         await _next(context);
