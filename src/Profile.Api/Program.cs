@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Profile.Api.Configuration;
 using Profile.Api.Endpoints;
 using Profile.Api.Middleware;
 using Profile.Api.Observability;
@@ -30,10 +31,7 @@ builder.Services.AddOpenTelemetry()
     });
 
 // ── Database — Npgsql / EF Core 10 (REL-01, MAINT) ────────────────────────
-var connStr = builder.Configuration.GetConnectionString("ProfileDb")
-              ?? builder.Configuration["DATABASE_URL_PROFILE"]
-              ?? throw new InvalidOperationException(
-                  "Connection string not configured. Set DATABASE_URL_PROFILE or ConnectionStrings:ProfileDb.");
+var connStr = StartupConfiguration.GetDatabaseConnectionString(builder.Configuration);
 
 builder.Services.AddDbContext<ProfileDbContext>(opts =>
     opts.UseNpgsql(connStr));
@@ -47,9 +45,7 @@ builder.Services.AddSingleton<IAesEncryptionService, AesGcmEncryptionService>();
 // ── Authentication: identity comes only from a validated JWT (AGENTS.md, GW-01) ──
 // The service is publicly reachable, so it validates tokens itself in every environment
 // instead of trusting gateway-forwarded headers.
-var jwtSecret = builder.Configuration["JWT_SECRET"];
-if (string.IsNullOrWhiteSpace(jwtSecret) || Encoding.UTF8.GetByteCount(jwtSecret) < 32)
-    throw new InvalidOperationException("JWT_SECRET is required and must be at least 32 bytes.");
+var jwtSecret = StartupConfiguration.GetJwtSecret(builder.Configuration);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
@@ -70,9 +66,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Header-based identity (DevAuthMiddleware) is an explicit local-only opt-in.
-var devAuthEnabled = builder.Configuration.GetValue<bool>("DEV_AUTH_ENABLED");
-if (devAuthEnabled && !builder.Environment.IsDevelopment())
-    throw new InvalidOperationException("DEV_AUTH_ENABLED is only allowed in the Development environment.");
+StartupConfiguration.ValidateDevAuth(builder.Configuration, builder.Environment);
+var devAuthEnabled = builder.Configuration.GetValue<bool>(StartupConfiguration.DevAuthVariable);
 
 // ── Problem Details RFC 7807 (REL-07) ─────────────────────────────────────
 builder.Services.AddProblemDetails();

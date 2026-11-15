@@ -74,6 +74,90 @@ public class ProfileApiTests(ProfileApiFixture fixture)
     }
 
     [Fact]
+    public async Task PutMe_WithoutToken_Returns401_AndWritesNothing()
+    {
+        var user = NewUser();
+        var res = await fixture.Client.PutAsJsonAsync("/api/profiles/me", new { fullName = "Anonymous" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+        var get = await SendAsync(HttpMethod.Get, "/api/profiles/me", user);
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    // ── PROFILE-01-01: avatar URL boundary validation (https only, max 512) ──
+    [Theory]
+    [InlineData("javascript:alert(document.cookie)")]
+    [InlineData("data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==")]
+    [InlineData("http://example.com/avatar.png")]
+    [InlineData("ftp://example.com/avatar.png")]
+    [InlineData("/relative/avatar.png")]
+    [InlineData("https://user:secret@example.com/avatar.png")]
+    [InlineData("https://")]
+    [InlineData("https://example.com/a b.png")]
+    public async Task PutMe_AvatarUrlNotHttps_Returns400(string avatarUrl)
+    {
+        var res = await SendAsync(HttpMethod.Put, "/api/profiles/me", NewUser(), new
+        {
+            fullName = "Avatar Tester",
+            avatarUrl,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var text = await res.Content.ReadAsStringAsync();
+        Assert.Contains("avatarurl", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PutMe_AvatarUrlTooLong_Returns400()
+    {
+        var res = await SendAsync(HttpMethod.Put, "/api/profiles/me", NewUser(), new
+        {
+            fullName = "Avatar Tester",
+            avatarUrl = "https://example.com/" + new string('a', 513),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task PutMe_RejectedAvatar_KeepsPreviousProfile()
+    {
+        var user = NewUser();
+        var good = await SendAsync(HttpMethod.Put, "/api/profiles/me", user, new
+        {
+            fullName = "Keeps Avatar",
+            avatarUrl = "https://cdn.example.com/a.png",
+        });
+        Assert.Equal(HttpStatusCode.OK, good.StatusCode);
+
+        var bad = await SendAsync(HttpMethod.Put, "/api/profiles/me", user, new
+        {
+            fullName = "Changed Name",
+            avatarUrl = "javascript:alert(1)",
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+
+        using var doc = await AsJsonAsync(await SendAsync(HttpMethod.Get, "/api/profiles/me", user));
+        Assert.Equal("Keeps Avatar", doc.RootElement.GetProperty("fullName").GetString());
+        Assert.Equal("https://cdn.example.com/a.png", doc.RootElement.GetProperty("avatarUrl").GetString());
+    }
+
+    [Fact]
+    public async Task PutMe_HttpsAvatar_IsStoredAndReturned()
+    {
+        var user = NewUser();
+        var put = await SendAsync(HttpMethod.Put, "/api/profiles/me", user, new
+        {
+            fullName = "Avatar Owner",
+            avatarUrl = "https://cdn.example.com/me.png",
+        });
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        using var doc = await AsJsonAsync(await SendAsync(HttpMethod.Get, "/api/profiles/me", user));
+        Assert.Equal("https://cdn.example.com/me.png", doc.RootElement.GetProperty("avatarUrl").GetString());
+    }
+
+    [Fact]
     public async Task GetMe_WithUserIdHeaderOnly_Returns401()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/profiles/me");
@@ -216,7 +300,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
     }
 
     [Fact]
-    public async Task DeleteSkill_Owner_Returns204_OtherUser_Returns403()
+    public async Task DeleteSkill_Owner_Returns204_OtherUser_Returns404()
     {
         var owner = NewUser();
         var create = await SendAsync(HttpMethod.Post, "/api/profiles/skills", owner, new
@@ -229,7 +313,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         var skillId = doc.RootElement.GetProperty("id").GetGuid();
 
         var forbidden = await SendAsync(HttpMethod.Delete, $"/api/profiles/skills/{skillId}", NewUser());
-        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, forbidden.StatusCode);
 
         var deleted = await SendAsync(HttpMethod.Delete, $"/api/profiles/skills/{skillId}", owner);
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
@@ -254,6 +338,30 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         var res = await SendAsync(HttpMethod.Delete, $"/api/profiles/skills/{Guid.NewGuid()}", NewUser());
 
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteSkill_MissingAndOtherUsersSkill_ReturnIdenticalResponse()
+    {
+        var owner = NewUser();
+        var create = await SendAsync(HttpMethod.Post, "/api/profiles/skills", owner, new
+        {
+            name = "Rust",
+            proficiency = 2,
+            yearsOfExperience = 1,
+        });
+        using var doc = await AsJsonAsync(create);
+        var skillId = doc.RootElement.GetProperty("id").GetGuid();
+
+        var caller = NewUser();
+        var missing = await SendAsync(HttpMethod.Delete, $"/api/profiles/skills/{Guid.NewGuid()}", caller);
+        var notOwned = await SendAsync(HttpMethod.Delete, $"/api/profiles/skills/{skillId}", caller);
+
+        Assert.Equal(missing.StatusCode, notOwned.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, notOwned.StatusCode);
+        Assert.Equal(
+            await missing.Content.ReadAsStringAsync(),
+            await notOwned.Content.ReadAsStringAsync());
     }
 
     // ── PROFILE-01-03: experiences ────────────────────────────────────────
@@ -288,7 +396,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
     }
 
     [Fact]
-    public async Task UpdateExperience_OtherUser_Returns403()
+    public async Task UpdateExperience_OtherUser_Returns404()
     {
         var owner = NewUser();
         var create = await SendAsync(HttpMethod.Post, "/api/profiles/experiences", owner, new
@@ -311,7 +419,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
             isCurrent = true,
         });
 
-        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 
     // ── PROFILE-01-04: educations ─────────────────────────────────────────
@@ -359,7 +467,7 @@ public class ProfileApiTests(ProfileApiFixture fixture)
     }
 
     [Fact]
-    public async Task DeleteEducation_OtherUser_Returns403()
+    public async Task DeleteEducation_OtherUser_Returns404()
     {
         var owner = NewUser();
         var create = await SendAsync(HttpMethod.Post, "/api/profiles/educations", owner, new
@@ -371,9 +479,9 @@ public class ProfileApiTests(ProfileApiFixture fixture)
         using var doc = await AsJsonAsync(create);
         var eduId = doc.RootElement.GetProperty("id").GetGuid();
 
-        var forbidden = await SendAsync(HttpMethod.Delete, $"/api/profiles/educations/{eduId}", NewUser());
+        var notOwned = await SendAsync(HttpMethod.Delete, $"/api/profiles/educations/{eduId}", NewUser());
 
-        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, notOwned.StatusCode);
     }
 
     // ── Observability: /metrics is the Prometheus scrape target ────────────
@@ -434,8 +542,8 @@ public class ProfileApiFixture : IAsyncLifetime
 
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
         Environment.SetEnvironmentVariable("JWT_SECRET", JwtSecret);
-        // NOTE: Program.cs prefers ConnectionStrings:ProfileDb (appsettings.Development.json)
-        // over DATABASE_URL_PROFILE, so override it via env mapping (double underscore).
+        // Program reads ConnectionStrings:ProfileDb first, then DATABASE_URL_PROFILE. Set both to the
+        // test database so neither source can point the tests elsewhere.
         var testConn = new NpgsqlConnectionStringBuilder(_serverConn) { Database = _dbName }.ToString();
         Environment.SetEnvironmentVariable("ConnectionStrings__ProfileDb", testConn);
         Environment.SetEnvironmentVariable("DATABASE_URL_PROFILE", testConn);

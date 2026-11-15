@@ -29,7 +29,6 @@ public static class EducationEndpoints
              .Produces<object>(StatusCodes.Status200OK)
              .ProducesValidationProblem()
              .ProducesProblem(StatusCodes.Status401Unauthorized)
-             .ProducesProblem(StatusCodes.Status403Forbidden)
              .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapDelete("/educations/{id:guid}", DeleteEducation)
@@ -37,7 +36,6 @@ public static class EducationEndpoints
              .WithSummary("Delete an education entry (owner only, PROFILE-01-04).")
              .Produces(StatusCodes.Status204NoContent)
              .ProducesProblem(StatusCodes.Status401Unauthorized)
-             .ProducesProblem(StatusCodes.Status403Forbidden)
              .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
@@ -94,14 +92,10 @@ public static class EducationEndpoints
         if (err is not null) return err;
 
         var edu = await db.Educations
-            .Include(e => e.Profile)
-            .FirstOrDefaultAsync(e => e.Id == id);
+            .FirstOrDefaultAsync(e => e.Id == id && e.Profile!.UserId == userId);
 
         if (edu is null)
-            return Results.NotFound(new { message = "Education entry not found." });
-
-        if (edu.Profile is null || edu.Profile.UserId != userId)
-            return Results.Problem("You are not allowed to update this education entry.", statusCode: StatusCodes.Status403Forbidden);
+            return ProfileEndpoints.NotFoundForCaller();
 
         edu.Update(dto.Institution, dto.Degree, dto.Field, dto.StartDate, dto.EndDate, dto.Grade);
         try
@@ -131,14 +125,10 @@ public static class EducationEndpoints
             return ProfileEndpoints.UnauthorizedIdentity();
 
         var edu = await db.Educations
-            .Include(e => e.Profile)
-            .FirstOrDefaultAsync(e => e.Id == id);
+            .FirstOrDefaultAsync(e => e.Id == id && e.Profile!.UserId == userId);
 
         if (edu is null)
-            return Results.NotFound(new { message = "Education entry not found." });
-
-        if (edu.Profile is null || edu.Profile.UserId != userId)
-            return Results.Problem("You are not allowed to delete this education entry.", statusCode: StatusCodes.Status403Forbidden);
+            return ProfileEndpoints.NotFoundForCaller();
 
         db.Educations.Remove(edu);
         await db.SaveChangesAsync();

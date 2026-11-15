@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Profile.Core.DTOs;
 using Profile.Core.Entities;
 using Profile.Core.Interfaces;
+using Profile.Core.Validation;
 using Profile.Infrastructure.Data;
 
 namespace Profile.Api.Endpoints;
@@ -62,6 +63,12 @@ public static class ProfileEndpoints
                 { nameof(dto.FullName), ["FullName is required."] },
             });
 
+        if (!AvatarUrlPolicy.TryNormalize(dto.AvatarUrl, out var avatarUrl, out var avatarError))
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                { nameof(dto.AvatarUrl), [avatarError!] },
+            });
+
         // Encrypt PII fields (SEC-08)
         var phoneEnc = aes.Encrypt(dto.Phone);
         var addressEnc = aes.Encrypt(dto.Address);
@@ -75,13 +82,13 @@ public static class ProfileEndpoints
         if (profile is null)
         {
             profile = new UserProfile(userId, dto.FullName);
-            profile.Update(dto.FullName, dto.Headline, dto.Summary, dto.AvatarUrl, phoneEnc, addressEnc, dobEnc);
+            profile.Update(dto.FullName, dto.Headline, dto.Summary, avatarUrl, phoneEnc, addressEnc, dobEnc);
             db.Profiles.Add(profile);
             logger.LogInformation("Creating new profile for user {UserId}", userId);
         }
         else
         {
-            profile.Update(dto.FullName, dto.Headline, dto.Summary, dto.AvatarUrl, phoneEnc, addressEnc, dobEnc);
+            profile.Update(dto.FullName, dto.Headline, dto.Summary, avatarUrl, phoneEnc, addressEnc, dobEnc);
             logger.LogInformation("Updating profile {ProfileId} for user {UserId}", profile.Id, userId);
         }
 
@@ -261,4 +268,11 @@ public static class ProfileEndpoints
 
     internal static IResult UnauthorizedIdentity() =>
         Results.Problem("Authenticated user id is missing or invalid.", statusCode: StatusCodes.Status401Unauthorized);
+
+    /// <summary>
+    /// The single response for a child row that is missing or owned by another user. Both cases
+    /// return this identical 404, so a caller cannot probe which row ids exist.
+    /// </summary>
+    internal static IResult NotFoundForCaller() =>
+        Results.NotFound(new { message = "Resource not found." });
 }
