@@ -9,7 +9,7 @@ Candidate & User Profile microservice for **Vietnam Job Platform** (`pbl6`) — 
 
 ## Overview
 
-- `src/Profile.Api` — Web API Minimal APIs, `Swagger`, `/health`, `auto-migrate`, `DevAuthMiddleware`
+- `src/Profile.Api` — Web API Minimal APIs, `Swagger`, `/health`, `migrate` command, `DevAuthMiddleware`
 - `src/Profile.Core` — Domain entities (`UserProfile`, `Skill`, `WorkExperience`, `Education` `: Entity`), `IAesEncryptionService`, DTOs
 - `src/Profile.Infrastructure` — `ProfileDbContext` (`Npgsql`), EF Migrations, `AesGcmEncryptionService` (SEC-08)
 - `tests/Profile.Tests` — `xunit` unit and integration tests
