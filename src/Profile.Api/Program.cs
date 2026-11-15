@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Profile.Api.Auth;
 using Profile.Api.Bootstrap;
 using Profile.Api.Configuration;
 using Profile.Api.Endpoints;
@@ -51,24 +52,8 @@ builder.Services.AddSingleton<IAesEncryptionService, AesGcmEncryptionService>();
 // ── Authentication: identity comes only from a validated JWT (AGENTS.md, GW-01) ──
 // The service is publicly reachable, so it validates tokens itself in every environment
 // instead of trusting gateway-forwarded headers.
-var jwtSecret = StartupConfiguration.GetJwtSecret(builder.Configuration);
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(opts =>
-    {
-        opts.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuer = "job-platform",
-            ValidateAudience = true,
-            ValidAudience = "job-platform",
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-        };
-    });
-
+// RS256 keys come from auth-svc's JWKS (Jwt__MetadataAddress); the service holds no shared secret.
+builder.Services.AddRs256JwtBearer(builder.Configuration);
 builder.Services.AddAuthorization();
 
 // Header-based identity (DevAuthMiddleware) is an explicit local-only opt-in.

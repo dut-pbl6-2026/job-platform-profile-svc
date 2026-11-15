@@ -88,7 +88,7 @@ public class StartupConfigurationTests
             builder.UseEnvironment(environment);
             builder.UseSetting("PROFILE_ENCRYPTION_KEY", encryptionKey ?? string.Empty);
             builder.UseSetting("DEV_AUTH_ENABLED", devAuthEnabled ?? "false");
-            builder.UseSetting("JWT_SECRET", Convert.ToBase64String(RandomNumberGenerator.GetBytes(48)));
+            builder.UseSetting("Jwt:MetadataAddress", "http://auth.test/.well-known/openid-configuration");
             builder.UseSetting("DATABASE_URL_PROFILE", databaseUrl ?? string.Empty);
             builder.UseSetting("ConnectionStrings:ProfileDb", connectionStringsProfileDb ?? string.Empty);
         });

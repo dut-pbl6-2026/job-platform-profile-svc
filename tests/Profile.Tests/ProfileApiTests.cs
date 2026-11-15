@@ -2,7 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Profile.Tests.Auth;
 using Profile.Api.Bootstrap;
 using Npgsql;
 using Xunit;
@@ -510,9 +514,6 @@ public class ProfileApiCollection : ICollectionFixture<ProfileApiFixture>;
 
 public class ProfileApiFixture : IAsyncLifetime
 {
-    /// <summary>Per-run JWT signing secret, shared with <see cref="TestTokens"/>.</summary>
-    public static string JwtSecret { get; } = RandomBase64(48);
-
     public HttpClient Client { get; private set; } = null!;
     private WebApplicationFactory<Program> _factory = null!;
     private string _dbName = "";
@@ -542,7 +543,7 @@ public class ProfileApiFixture : IAsyncLifetime
         }
 
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
-        Environment.SetEnvironmentVariable("JWT_SECRET", JwtSecret);
+        Environment.SetEnvironmentVariable("Jwt__MetadataAddress", TestSigningKeys.MetadataAddress);
         // Program reads ConnectionStrings:ProfileDb first, then DATABASE_URL_PROFILE. Set both to the
         // test database so neither source can point the tests elsewhere.
         var testConn = new NpgsqlConnectionStringBuilder(_serverConn) { Database = _dbName }.ToString();
@@ -554,7 +555,11 @@ public class ProfileApiFixture : IAsyncLifetime
         var exit = await MigrateCommand.RunAsync(["migrate"], testConn, TextWriter.Null, TextWriter.Null);
         Assert.Equal(0, exit);
 
-        _factory = new WebApplicationFactory<Program>();
+        // Validation keys come from the JWKS stub, the same discovery path a deployment uses.
+        var jwks = new JwksStubHandler(healthy: true);
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.ConfigureTestServices(services =>
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme,
+                o => o.ConfigurationManager = jwks.CreateConfigurationManager())));
         Client = _factory.CreateClient();
     }
 

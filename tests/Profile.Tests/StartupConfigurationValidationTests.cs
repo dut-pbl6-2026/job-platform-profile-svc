@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Profile.Api.Auth;
 using Profile.Api.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Profile.Tests;
@@ -71,21 +73,12 @@ public class StartupConfigurationValidationTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("short-secret")]
-    public void JwtSecret_MissingOrShort_Throws(string? secret)
+    public void JwtMetadataAddress_MissingOrBlank_FailsStartup(string? address)
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            StartupConfiguration.GetJwtSecret(Config((StartupConfiguration.JwtSecretVariable, secret))));
+            new ServiceCollection().AddRs256JwtBearer(Config(("Jwt:MetadataAddress", address))));
 
-        Assert.Contains("at least 32 bytes", ex.Message);
-    }
-
-    [Fact]
-    public void JwtSecret_32Bytes_IsAccepted()
-    {
-        var secret = new string('s', 32);
-
-        Assert.Equal(secret, StartupConfiguration.GetJwtSecret(Config((StartupConfiguration.JwtSecretVariable, secret))));
+        Assert.Contains("Jwt:MetadataAddress", ex.Message);
     }
 
     [Fact]

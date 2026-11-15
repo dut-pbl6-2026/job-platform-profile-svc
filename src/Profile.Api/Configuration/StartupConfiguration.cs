@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 
@@ -14,10 +13,7 @@ public static class StartupConfiguration
 {
     public const string DatabaseConnectionName = "ProfileDb";
     public const string DatabaseUrlVariable = "DATABASE_URL_PROFILE";
-    public const string JwtSecretVariable = "JWT_SECRET";
     public const string DevAuthVariable = "DEV_AUTH_ENABLED";
-
-    private const int MinJwtSecretBytes = 32;
 
     public static string GetDatabaseConnectionString(IConfiguration configuration)
     {
@@ -31,16 +27,6 @@ public static class StartupConfiguration
 
         throw new InvalidOperationException(
             $"Connection string not configured. Set {DatabaseUrlVariable} (or ConnectionStrings__{DatabaseConnectionName}).");
-    }
-
-    /// <summary>Returns the HS256 signing secret. It must be at least 32 bytes (UTF-8).</summary>
-    public static string GetJwtSecret(IConfiguration configuration)
-    {
-        var secret = configuration[JwtSecretVariable];
-        if (string.IsNullOrWhiteSpace(secret) || Encoding.UTF8.GetByteCount(secret) < MinJwtSecretBytes)
-            throw new InvalidOperationException($"{JwtSecretVariable} is required and must be at least {MinJwtSecretBytes} bytes.");
-
-        return secret;
     }
 
     /// <summary>DEV_AUTH_ENABLED is a local-only opt-in: refuse it outside the Development environment.</summary>
