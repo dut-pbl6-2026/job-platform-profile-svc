@@ -22,7 +22,7 @@ Agent uses `mise exec -- dotnet ...` / `mise exec -- infisical ...` due to non-i
 ## Architecture — clean Api/Core/Infrastructure
 
 ```
-src/Profile.Api            → Web API (Program.cs JWT Bearer + DevAuth + Swagger + /health + auto-migrate)
+src/Profile.Api            → Web API (Program.cs JWT Bearer + DevAuth + Swagger + /health; `migrate` one-off command)
 src/Profile.Core           → Domain (UserProfile, Skill, WorkExperience, Education : Entity) + IAesEncryptionService + DTOs
 src/Profile.Infrastructure → Data (ProfileDbContext Npgsql, Migrations) + Services (AesGcmEncryptionService)
 tests/Profile.Tests        → xunit (ProfileCrudTests, SkillExperienceTests, AesEncryptionTests, AuthorizationTests)
@@ -74,7 +74,7 @@ Dual-mode authentication matching platform standard:
 
 ## Reliability (NFR `REL-01`, `REL-06`)
 
-- Auto-migrate on startup with `ILogger` and fail-fast (`throw` on failure to prevent running on inconsistent schema).
+- Schema migration is a separate deploy step: `dotnet Profile.Api.dll migrate` (`Bootstrap/MigrateCommand.cs`, compose service `profile-migrate`) exits non-zero on failure. The web host never migrates on startup, so it cannot run against an unmigrated schema once the compose ordering is in place.
 - DB connection pooling: `MaxPoolSize=20` configured via connection string `DATABASE_URL_PROFILE`.
 - Health check: `GET /health` returns `{"status":"ok","service":"profile"}`.
 

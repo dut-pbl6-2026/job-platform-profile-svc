@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Profile.Api.Bootstrap;
 using Profile.Api.Configuration;
 using Profile.Api.Endpoints;
 using Profile.Api.Middleware;
@@ -32,6 +33,11 @@ builder.Services.AddOpenTelemetry()
 
 // ── Database — Npgsql / EF Core 10 (REL-01, MAINT) ────────────────────────
 var connStr = StartupConfiguration.GetDatabaseConnectionString(builder.Configuration);
+
+// Schema migration is a separate deploy step: `migrate` applies pending migrations and exits.
+// The web host never migrates on startup. Checked before the JWT and encryption settings are read.
+if (MigrateCommand.IsInvoked(args))
+    return await MigrateCommand.RunAsync(args, connStr, Console.Out, Console.Error);
 
 builder.Services.AddDbContext<ProfileDbContext>(opts =>
     opts.UseNpgsql(connStr));
@@ -127,23 +133,6 @@ var app = builder.Build();
 // Resolve the encryption service now so a missing or malformed key fails startup, not the first request.
 _ = app.Services.GetRequiredService<IAesEncryptionService>();
 
-// ── Auto-migrate on startup (REL-01) ──────────────────────────────────────
-using (var scope = app.Services.CreateScope())
-{
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    try
-    {
-        var db = scope.ServiceProvider.GetRequiredService<ProfileDbContext>();
-        await db.Database.MigrateAsync();
-        logger.LogInformation("Database migration completed successfully.");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Database migration failed. Service cannot start with inconsistent schema.");
-        throw; // fail-fast
-    }
-}
-
 // ── Middleware pipeline ────────────────────────────────────────────────────
 app.UseServiceLogging();
 app.UseExceptionHandler();
@@ -185,6 +174,8 @@ app.MapExperienceEndpoints();
 app.MapEducationEndpoints();
 
 app.Run();
+
+return 0;
 
 // Make Program accessible for integration tests
 public partial class Program { }

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Profile.Api.Bootstrap;
 using Npgsql;
 using Xunit;
 
@@ -549,7 +550,10 @@ public class ProfileApiFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("DATABASE_URL_PROFILE", testConn);
         Environment.SetEnvironmentVariable("PROFILE_ENCRYPTION_KEY", RandomBase64(32));
 
-        // Startup runs EF MigrateAsync — creates the schema.
+        // The host no longer migrates on startup: apply the schema with the migrate command first.
+        var exit = await MigrateCommand.RunAsync(["migrate"], testConn, TextWriter.Null, TextWriter.Null);
+        Assert.Equal(0, exit);
+
         _factory = new WebApplicationFactory<Program>();
         Client = _factory.CreateClient();
     }
