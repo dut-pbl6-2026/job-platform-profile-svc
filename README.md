@@ -123,12 +123,39 @@ curl -X POST http://localhost:5005/api/profiles/experiences \
 
 Every `/api/profiles` request must carry a JWT issued by auth-svc: `Authorization: Bearer <token>`. `JWT_SECRET` (≥ 32 bytes) must match the issuer's secret. Identity comes only from the token; `X-User-Id` headers are ignored unless `DEV_AUTH_ENABLED=true` in Development.
 
+## Configuration
+
+Set these environment variables before `mise run run` (the service reads process environment, not `.env`):
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DATABASE_URL_PROFILE` | yes, every environment | Npgsql connection string (or `ConnectionStrings__ProfileDb`). No committed fallback. |
+| `JWT_SECRET` | yes | HS256 secret, at least 32 bytes, shared with auth-svc. |
+| `PROFILE_ENCRYPTION_KEY` | yes | Base64 of 32 random bytes (`openssl rand -base64 32`). |
+| `PROFILE_ENCRYPTION_KEY_ID` | no | Id of the active key, 1-255 (default 1). |
+| `PROFILE_ENCRYPTION_KEYS_RETIRED` | no | Decrypt-only keys, `id:base64key,...`. |
+| `DEV_AUTH_ENABLED` | no | `true` enables `X-User-Id` auth; allowed only in Development. |
+
+Example for local Development:
+
+```bash
+export DATABASE_URL_PROFILE='Host=localhost;Port=5432;Database=job_platform_profile;Username=postgres;Password=postgres'
+export JWT_SECRET="$(openssl rand -base64 48)"   # must match the auth-svc secret for real tokens
+export PROFILE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+mise run run
+```
+
+## Ownership and avatars
+
+- A profile's child rows (skills, experiences, educations) can be changed only by their owner. Another user's row and a missing row return the same `404`.
+- `avatarUrl` must be an absolute `https` URL of at most 512 characters with no user information. Other values return `400`.
+
 ## Security & Encryption (SEC-08)
 
 All sensitive PII fields (`phone`, `address`, `date_of_birth`) are encrypted using application-layer `AES-256-GCM` before persisting to PostgreSQL (`job_platform_profile`).
 - Unique 12-byte Nonce per encryption.
-- Storage format: `Base64(Nonce[12B] + Tag[16B] + Ciphertext[NB])`.
 - Master encryption key from the `PROFILE_ENCRYPTION_KEY` environment variable: base64 of 32 random bytes, used directly as the AES-256 key (`openssl rand -base64 32`). The service refuses to start if it is missing or malformed.
+- Ciphertext is versioned: `Base64(KeyId[1] + Nonce[12] + Tag[16] + Ciphertext)`. Optional `PROFILE_ENCRYPTION_KEY_ID` (default `1`) names the active key, and `PROFILE_ENCRYPTION_KEYS_RETIRED` (`id:base64key,...`) keeps old keys for decryption only. See `AGENTS.md` for the rotation steps.
 - Public profile API (`GET /api/profiles/{id}`) strictly excludes sensitive PII fields.
 
 ## Troubleshooting

@@ -49,6 +49,20 @@ public class StartupConfigurationTests
         Assert.Contains("must be valid base64", ex.Message);
     }
 
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public async Task Startup_MissingDatabaseConnectionString_Fails(string environment)
+    {
+        var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+        // Both sources blank: no committed fallback may be used in any environment.
+        var ex = await StartupExceptionAsync(environment, key, databaseUrl: "", connectionStringsProfileDb: "");
+
+        Assert.NotNull(ex);
+        Assert.Contains("Connection string not configured", ex.Message);
+    }
+
     [Fact]
     public async Task Startup_DevAuthEnabled_OutsideDevelopment_Fails()
     {
@@ -65,7 +79,9 @@ public class StartupConfigurationTests
     /// Settings are passed with UseSetting so they override anything inherited from the process environment.
     /// </summary>
     private static async Task<Exception?> StartupExceptionAsync(
-        string environment, string? encryptionKey, string? devAuthEnabled = null)
+        string environment, string? encryptionKey, string? devAuthEnabled = null,
+        string? databaseUrl = "Host=127.0.0.1;Port=1;Database=unused;Username=x;Password=x",
+        string? connectionStringsProfileDb = null)
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -73,7 +89,8 @@ public class StartupConfigurationTests
             builder.UseSetting("PROFILE_ENCRYPTION_KEY", encryptionKey ?? string.Empty);
             builder.UseSetting("DEV_AUTH_ENABLED", devAuthEnabled ?? "false");
             builder.UseSetting("JWT_SECRET", Convert.ToBase64String(RandomNumberGenerator.GetBytes(48)));
-            builder.UseSetting("DATABASE_URL_PROFILE", "Host=127.0.0.1;Port=1;Database=unused;Username=x;Password=x");
+            builder.UseSetting("DATABASE_URL_PROFILE", databaseUrl ?? string.Empty);
+            builder.UseSetting("ConnectionStrings:ProfileDb", connectionStringsProfileDb ?? string.Empty);
         });
 
         try

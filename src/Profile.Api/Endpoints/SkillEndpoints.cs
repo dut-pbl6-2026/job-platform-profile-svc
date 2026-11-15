@@ -30,7 +30,6 @@ public static class SkillEndpoints
              .WithSummary("Delete a skill (owner only, PROFILE-01-02).")
              .Produces(StatusCodes.Status204NoContent)
              .ProducesProblem(StatusCodes.Status401Unauthorized)
-             .ProducesProblem(StatusCodes.Status403Forbidden)
              .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
@@ -108,16 +107,12 @@ public static class SkillEndpoints
         if (userId == Guid.Empty)
             return ProfileEndpoints.UnauthorizedIdentity();
 
+        // Ownership is part of the query, so a missing skill and another user's skill take the same path.
         var skill = await db.Skills
-            .Include(s => s.Profile)
-            .FirstOrDefaultAsync(s => s.Id == id);
+            .FirstOrDefaultAsync(s => s.Id == id && s.Profile!.UserId == userId);
 
         if (skill is null)
-            return Results.NotFound(new { message = "Skill not found." });
-
-        // Ownership check — only the profile owner can delete (403 otherwise)
-        if (skill.Profile is null || skill.Profile.UserId != userId)
-            return Results.Problem("You are not allowed to delete this skill.", statusCode: StatusCodes.Status403Forbidden);
+            return ProfileEndpoints.NotFoundForCaller();
 
         db.Skills.Remove(skill);
         await db.SaveChangesAsync();

@@ -14,4 +14,6 @@ WORKDIR /app
 COPY --from=build /out ./
 EXPOSE 5005
 ENV ASPNETCORE_HTTP_PORTS=5005
+# Run as the image's non-root user (APP_UID=1654 in mcr.microsoft.com/dotnet/aspnet), not root.
+USER $APP_UID
 ENTRYPOINT ["dotnet", "Profile.Api.dll"]

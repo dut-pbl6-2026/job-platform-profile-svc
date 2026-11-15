@@ -29,7 +29,6 @@ public static class ExperienceEndpoints
              .Produces<object>(StatusCodes.Status200OK)
              .ProducesValidationProblem()
              .ProducesProblem(StatusCodes.Status401Unauthorized)
-             .ProducesProblem(StatusCodes.Status403Forbidden)
              .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapDelete("/experiences/{id:guid}", DeleteExperience)
@@ -37,7 +36,6 @@ public static class ExperienceEndpoints
              .WithSummary("Delete a work experience entry (owner only, PROFILE-01-03).")
              .Produces(StatusCodes.Status204NoContent)
              .ProducesProblem(StatusCodes.Status401Unauthorized)
-             .ProducesProblem(StatusCodes.Status403Forbidden)
              .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
@@ -102,14 +100,10 @@ public static class ExperienceEndpoints
             return validationError;
 
         var exp = await db.WorkExperiences
-            .Include(e => e.Profile)
-            .FirstOrDefaultAsync(e => e.Id == id);
+            .FirstOrDefaultAsync(e => e.Id == id && e.Profile!.UserId == userId);
 
         if (exp is null)
-            return Results.NotFound(new { message = "Work experience not found." });
-
-        if (exp.Profile is null || exp.Profile.UserId != userId)
-            return Results.Problem("You are not allowed to update this work experience.", statusCode: StatusCodes.Status403Forbidden);
+            return ProfileEndpoints.NotFoundForCaller();
 
         exp.Update(dto.Company, dto.Title, dto.StartDate, dto.EndDate, dto.IsCurrent, dto.Description);
         try
@@ -142,14 +136,10 @@ public static class ExperienceEndpoints
             return ProfileEndpoints.UnauthorizedIdentity();
 
         var exp = await db.WorkExperiences
-            .Include(e => e.Profile)
-            .FirstOrDefaultAsync(e => e.Id == id);
+            .FirstOrDefaultAsync(e => e.Id == id && e.Profile!.UserId == userId);
 
         if (exp is null)
-            return Results.NotFound(new { message = "Work experience not found." });
-
-        if (exp.Profile is null || exp.Profile.UserId != userId)
-            return Results.Problem("You are not allowed to delete this work experience.", statusCode: StatusCodes.Status403Forbidden);
+            return ProfileEndpoints.NotFoundForCaller();
 
         db.WorkExperiences.Remove(exp);
         await db.SaveChangesAsync();
