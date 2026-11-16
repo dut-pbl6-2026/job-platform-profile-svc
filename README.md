@@ -13,7 +13,7 @@ Candidate & User Profile microservice for **Vietnam Job Platform** (`pbl6`) — 
 - `src/Profile.Core` — Domain entities (`UserProfile`, `Skill`, `WorkExperience`, `Education` `: Entity`), `IAesEncryptionService`, DTOs
 - `src/Profile.Infrastructure` — `ProfileDbContext` (`Npgsql`), EF Migrations, `AesGcmEncryptionService` (SEC-08)
 - `tests/Profile.Tests` — `xunit` unit and integration tests
-- GitHub Packages feed (`nuget.config`) — `JobPlatform.SharedKernel 0.3.1`; restore needs `GITHUB_TOKEN` with `read:packages`
+- GitHub Packages feed (`nuget.config`) — `JobPlatform.SharedKernel 0.4.0`; restore needs `GITHUB_TOKEN` with `read:packages`
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ mise run format    # dotnet format --verify-no-changes
 mise run ef-check  # check for pending model changes
 ```
 
-Update SharedKernel: `mise run pack-shared`.
+Update SharedKernel: bump the `PackageReference` to the version released from `job-platform-shared` (GitHub Packages).
 
 ## Health, logging & code quality
 - `GET /health` - static liveness (`{"status":"ok","service":"..."}`).
@@ -161,7 +161,7 @@ All sensitive PII fields (`phone`, `address`, `date_of_birth`) are encrypted usi
 ## Troubleshooting
 
 - `dotnet: command not found` → `mise trust && mise install`
-- `NU1301 local source` → `mise run pack-shared`
+- `NU1301 401` from GitHub Packages → set `GITHUB_TOKEN` with `read:packages` (the package is public, but the feed still requires authentication)
 - `PostgreSQL connection error` → Ensure local DB is running (`cd ../job-platform-infra && docker compose up -d`) and `DATABASE_URL_PROFILE` is set in `.env`.
 - `mise run verify` fails → re-run `mise run sync-env`.
 
